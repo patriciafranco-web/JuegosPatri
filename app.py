@@ -67,7 +67,7 @@ def enviar_flyer_local_whatsapp(telefono, caption, id_inst=None, token_inst=None
         except Exception as e:
             print(f"❌ Error subiendo flyer local: {e}")
 
-    enviar_mensaje_whatsapp(telefono, caption, id_usar, token_usar)
+    enviar_mensaje_whatsapp(telefono, caption, id_usar, token_inst)
 
 def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
     tel_formateado = formatear_telefono(telefono)
@@ -191,7 +191,7 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
             INSERT INTO sorteos (id, titulo, precio, limite_boletos, estado, imagen_nombre)
-            VALUES (1, 'Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito', 1000, 6500, 'Activo', 'flyer_sorteo.jpeg')
+            VALUES (1, 'Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito', 2000, 6500, 'Activo', 'flyer_sorteo.jpeg')
         ''')
     
     conn.commit()
@@ -380,38 +380,42 @@ def webhook_whatsapp():
         if "hola" in mensaje_lower or paso == "INICIO":
             sesion["paso"] = "ESPERANDO_COMBO"
             titulo_sorteo = sorteo["titulo"] if sorteo else "Sorteo General"
+            precio_unitario = sorteo["precio"] if sorteo else 2000
+            
             caption = (
                 f"¡Hola! Bienvenido a *JUEGOS PATRI* 🍀🎱\n"
-                f"{titulo_sorteo} 🥩🍺\n\n"
-                f"🔥 *ELIGE TU COMBO:* \n\n"
-                f"1️⃣ *Combo 1:* 5.000 Gs. = 5 boletas\n"
-                f"2️⃣ *Combo 2:* 10.000 Gs. = 12 boletas *(¡El más pedido! ⭐)*\n"
-                f"3️⃣ *Combo 3:* 20.000 Gs. = 25 boletas *(¡Más chances! 🚀)*\n\n"
-                f"*(Responde con el número de tu combo 1, 2, 3 o escribe la cantidad exacta de boletas que deseas)*"
+                f"{titulo_sorteo} 🥩🍺\n"
+                f"*(Valor unitario: {precio_unitario:,} Gs. c/u)*\n\n"
+                f"🔥 *¡APROVECHA NUESTROS COMBOS O ELIGE TU CANTIDAD:* \n\n"
+                f"1️⃣ *Combo 1:* 10.000 Gs. = 6 boletas *(¡1 de regalo!)*\n"
+                f"2️⃣ *Combo 2:* 20.000 Gs. = 13 boletas *(¡El más pedido! ⭐)*\n"
+                f"3️⃣ *Combo 3:* 45.000 Gs. = 30 boletas *(¡Super combo! 🚀)*\n\n"
+                f"👉 *(Responde con 1, 2, 3 o escribe directamente la cantidad exacta de boletas que deseas comprar)*"
             )
             enviar_flyer_local_whatsapp(telefono, caption, id_inst, token_inst)
 
         elif paso == "ESPERANDO_COMBO" and mensaje.isdigit():
             opcion = int(mensaje)
+            precio_unitario = sorteo["precio"] if sorteo else 2000
+
             if opcion == 1:
-                cantidad = 5
-                total = 5000
-                nombre_combo = "Combo 1 (5 boletas)"
-            elif opcion == 2:
-                cantidad = 12
+                cantidad = 6
                 total = 10000
-                nombre_combo = "Combo 2 (12 boletas)"
-            elif opcion == 3:
-                cantidad = 25
+                nombre_combo = "Combo 1 (6 boletas)"
+            elif opcion == 2:
+                cantidad = 13
                 total = 20000
-                nombre_combo = "Combo 3 (25 boletas)"
-            elif opcion > 3:
+                nombre_combo = "Combo 2 (13 boletas)"
+            elif opcion == 3:
+                cantidad = 30
+                total = 45000
+                nombre_combo = "Combo 3 (30 boletas)"
+            elif opcion > 0:
                 cantidad = opcion
-                precio_unitario = sorteo["precio"] if sorteo else 1000
                 total = cantidad * precio_unitario
                 nombre_combo = f"Personalizado ({cantidad} boletas)"
             else:
-                enviar_mensaje_whatsapp(telefono, "❌ Opción inválida. Por favor responde con 1, 2 o 3, o escribe la cantidad exacta de boletas.", id_inst, token_inst)
+                enviar_mensaje_whatsapp(telefono, "❌ Cantidad inválida. Por favor, escribe un número mayor a 0.", id_inst, token_inst)
                 return jsonify({"status": "ok"}), 200
 
             sesion["datos"]["cantidad"] = cantidad
@@ -643,7 +647,7 @@ def admin_crear_sorteo():
         cursor.execute('''
             INSERT INTO sorteos (titulo, precio, limite_boletos, estado, imagen_nombre)
             VALUES (?, ?, ?, 'Activo', 'flyer_sorteo.jpeg')
-        ''', (data.get("titulo"), int(data.get("precio", 1000)), int(data.get("limite_boletos", 6500))))
+        ''', (data.get("titulo"), int(data.get("precio", 2000)), int(data.get("limite_boletos", 6500))))
         nuevo_id = cursor.lastrowid
         cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{nuevo_id}", "1"))
         conn.commit()
@@ -687,7 +691,7 @@ def admin_aprobar_lote(lote_id):
             conn2 = get_db()
             sorteo = conn2.execute("SELECT * FROM sorteos WHERE id = ?", (b["sorteo_id"],)).fetchone()
             conn2.close()
-            precio = sorteo["precio"] if sorteo else 1000
+            precio = sorteo["precio"] if sorteo else 2000
             titulo = sorteo["titulo"] if sorteo else "Juegos Patri"
             caption = f"✨ *¡Pago Verificado en BNF y Boleto Emitido!*\n\nCLIENTE: {b['nombre']}\nCI: {b['cedula']}\nEDICION: {titulo}\nVALOR: Gs. {precio:,}\nNRO: #{str(b['id']).zfill(5)}\n\n🍀 *¡Participas automáticamente en los Juegos Locos de Juegos Patri!*"
             enviar_ticket_directo(b['telefono'], b['id'], host_actual, caption)

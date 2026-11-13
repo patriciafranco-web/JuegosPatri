@@ -12,7 +12,8 @@ import shutil
 app = Flask(__name__)
 
 ID_INSTANCE = "71072280242"
-API_TOKEN_INSTANCE = "a86d8f027e9a4e24bc0e0c5163039e2a79a8bed0e7a045dc9c"
+API_TOKEN_INSTANCE = "a86d8f027e9a4e24bc0e0c5163039e2a79a8bed0e7a045dc9c" 
+# ↑↑ ¡Verifica que este largo texto sea idéntico al de tu panel actual! ↑↑
 
 def formatear_telefono(telefono):
     tel_limpio = "".join(filter(str.isdigit, str(telefono)))

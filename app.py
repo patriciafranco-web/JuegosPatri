@@ -67,7 +67,7 @@ def enviar_flyer_local_whatsapp(telefono, caption, id_inst=None, token_inst=None
         except Exception as e:
             print(f"❌ Error subiendo flyer local: {e}")
 
-    enviar_mensaje_whatsapp(telefono, caption, id_usar, token_inst)
+    enviar_mensaje_whatsapp(telefono, caption, id_inst, token_inst)
 
 def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
     tel_formateado = formatear_telefono(telefono)
@@ -425,7 +425,7 @@ def webhook_whatsapp():
             enviar_mensaje_whatsapp(
                 telefono,
                 f"🎟️ Has elegido: *{nombre_combo}*\nTotal a transferir: *{total:,} Gs.*\n\n"
-                "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Cuenta Alias:* 0981047851\n🔸 *Banco:* BNF\n\n"
+                "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Cuenta / Alias:* 0981047851\n🔸 *Banco:* BNF\n\n"
                 "📝 Por favor, escribe tu *Nombre completo* y tu *Cédula* separados por un espacio (Ej: Juan Pérez 1234567).",
                 id_inst, token_inst
             )

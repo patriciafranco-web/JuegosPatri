@@ -11,11 +11,10 @@ import shutil
 
 app = Flask(__name__)
 
-# Credenciales exactas de tu panel Green API
-ID_INSTANCE = "71072280242".strip()
-API_TOKEN_INSTANCE = "a86d8f027e9a4e24bc0e0c5163039e2a79a8bed0e7a045dc9c".strip()
+# Permiso para leer credenciales desde Variables de Entorno de Render o directo de aquí:
+ID_INSTANCE = os.environ.get("ID_INSTANCE", "710722800257").strip()
+API_TOKEN_INSTANCE = os.environ.get("API_TOKEN_INSTANCE", "5c2bc8276faf4842a7aa71d55b5d569f8a3d841ec9f24301aa").strip()
 API_URL = "https://7107.api.greenapi.com"
-MEDIA_URL = "https://7107.media.greenapi.com"
 
 def formatear_telefono(telefono):
     tel_limpio = "".join(filter(str.isdigit, str(telefono)))
@@ -25,39 +24,52 @@ def formatear_telefono(telefono):
         tel_limpio = "595" + tel_limpio
     return tel_limpio
 
-def enviar_mensaje_whatsapp(telefono, texto):
+def obtener_credenciales(datos_webhook=None):
+    # Si el webhook trae las credenciales de la instancia o queremos usar las globales
+    id_inst = ID_INSTANCE
+    token_inst = API_TOKEN_INSTANCE
+    if datos_webhook and "instanceData" in datos_webhook:
+        id_webhook = str(datos_webhook["instanceData"].get("idInstance", "")).strip()
+        if id_webhook:
+            id_inst = id_webhook
+    return id_inst, token_inst
+
+def enviar_mensaje_whatsapp(telefono, texto, id_inst=None, token_inst=None):
+    id_usar = id_inst or ID_INSTANCE
+    token_usar = token_inst or API_TOKEN_INSTANCE
     tel_formateado = formatear_telefono(telefono)
-    url = f"{API_URL}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+    url = f"{API_URL}/waInstance{id_usar}/sendMessage/{token_usar}"
     payload = {"chatId": f"{tel_formateado}@c.us", "message": texto}
     try:
         res = requests.post(url, json=payload, timeout=12)
-        print(f"📩 [TEXTO] Green API respondió: {res.status_code} - {res.text}")
+        print(f"📩 [TEXTO a {tel_formateado}] Status: {res.status_code} | Resp: {res.text}")
     except Exception as e:
         print(f"❌ Error enviando mensaje Green API: {e}")
 
-def enviar_flyer_local_whatsapp(telefono, caption):
+def enviar_flyer_local_whatsapp(telefono, caption, id_inst=None, token_inst=None):
+    id_usar = id_inst or ID_INSTANCE
+    token_usar = token_inst or API_TOKEN_INSTANCE
     tel_formateado = formatear_telefono(telefono)
-    # Busca automáticamente flyer_sorteo.jpeg o flyer_sorteo.jpg en la carpeta static
+    
     ruta_jpeg = os.path.join(app.root_path, "static", "flyer_sorteo.jpeg")
     ruta_jpg = os.path.join(app.root_path, "static", "flyer_sorteo.jpg")
     ruta_final = ruta_jpeg if os.path.exists(ruta_jpeg) else ruta_jpg
 
     if os.path.exists(ruta_final):
-        # Usamos MEDIA_URL (7107.media.greenapi.com) que es el requerido para subir archivos sin error 401
-        url_up = f"{MEDIA_URL}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+        # En tu instancia tanto apiUrl como mediaUrl son https://7107.api.greenapi.com
+        url_up = f"{API_URL}/waInstance{id_usar}/sendFileByUpload/{token_usar}"
         payload = {"chatId": f"{tel_formateado}@c.us", "caption": caption}
         try:
             with open(ruta_final, "rb") as f:
                 files = [("file", ("flyer_juegos_patri.jpg", f.read(), "image/jpeg"))]
             res = requests.post(url_up, data=payload, files=files, timeout=20)
-            print(f"📸 [FLYER UPLOAD] Green API respondió: {res.status_code} - {res.text}")
+            print(f"📸 [FLYER a {tel_formateado}] Status: {res.status_code} | Resp: {res.text}")
             if res.status_code == 200:
                 return
         except Exception as e:
             print(f"❌ Error subiendo flyer local: {e}")
 
-    # Si por alguna razón falla la subida de imagen, envía el texto de los combos sí o sí para nunca dejar en visto al cliente
-    enviar_mensaje_whatsapp(telefono, caption)
+    enviar_mensaje_whatsapp(telefono, caption, id_usar, token_usar)
 
 def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
     tel_formateado = formatear_telefono(telefono)
@@ -67,13 +79,13 @@ def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
     if not output:
         return
     
-    url_up = f"{MEDIA_URL}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+    url_up = f"{API_URL}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
     payload = {'chatId': f"{tel_formateado}@c.us", 'caption': caption}
     files = [('file', (f'ticket_{boleto_id}.png', output.getvalue(), 'image/png'))]
     
     try:
         res = requests.post(url_up, data=payload, files=files, timeout=20)
-        print(f"🎟️ [TICKET] Green API respondió: {res.status_code} - {res.text}")
+        print(f"🎟️ [TICKET] Status: {res.status_code} | Resp: {res.text}")
     except Exception as e:
         print(f"❌ Error subiendo ticket directamente: {e}")
 
@@ -93,8 +105,6 @@ else:
 
 DB_PATH = os.path.join(CARPETA_DATOS, "juegos_patri.db")
 BACKUP_PATH = os.path.join(CARPETA_LOCAL, "juegos_patri_respaldo.db")
-
-print(f"📂 [JUEGOS PATRI DB] Ruta principal: {os.path.abspath(DB_PATH)}")
 
 def respaldar_base_datos():
     try:
@@ -210,36 +220,6 @@ ADMIN_USERS = {
 
 bloqueo_compra = threading.Lock()
 SESIONES_WHATSAPP = {}
-
-def verificar_pagos_pendientes_background():
-    while True:
-        try:
-            time.sleep(7200)
-            conn = get_db()
-            pendientes = conn.execute('''
-                SELECT DISTINCT telefono, nombre, lote_id 
-                FROM boletos 
-                WHERE estado = 'Pendiente' AND (imagen_comprobante IS NULL OR imagen_comprobante = '')
-            ''').fetchall()
-            conn.close()
-
-            for p in pendientes:
-                tel = p["telefono"]
-                nombre = p["nombre"]
-                texto_recordatorio = (
-                    f"¡Hola, {nombre}! 🍀 Te escribimos de *Juegos Patri*. 🎱\n\n"
-                    f"Notamos que tienes un combo pendiente de pago en el **BNF (Patricia Franco)**. "
-                    f"¡No te quedes sin asegurar tus números ni participar en los Juegos Locos de hoy!\n\n"
-                    f"Envíanos tu comprobante por aquí al toque para activar tus boletos. 🚀"
-                )
-                enviar_mensaje_whatsapp(tel, texto_recordatorio)
-                time.sleep(3)
-        except Exception as e:
-            print(f"⚠️ Error en hilo de recordatorios: {e}")
-
-hilo_recordatorios = threading.Thread(target=verificar_pagos_pendientes_background, daemon=True)
-hilo_recordatorios.start()
-
 
 @app.route("/")
 def index():
@@ -357,12 +337,12 @@ def webhook_whatsapp():
     if not datos:
         return jsonify({"status": "ignored"}), 200
 
-    # Ignorar notificaciones de mensajes salientes propios para evitar bucles
     tipo_webhook = datos.get("typeWebhook", "")
     if tipo_webhook and tipo_webhook != "incomingMessageReceived":
         return jsonify({"status": "ignored_type"}), 200
 
     try:
+        id_inst, token_inst = obtener_credenciales(datos)
         senderData = datos.get("senderData", {})
         messageData = datos.get("messageData", {})
         chat_id = senderData.get("chatId", "")
@@ -411,7 +391,7 @@ def webhook_whatsapp():
                 f"3️⃣ *Combo 3:* 20.000 Gs. = 25 boletas *(¡Más chances! 🚀)*\n\n"
                 f"*(Responde únicamente con el número de tu combo: 1, 2 o 3)*"
             )
-            enviar_flyer_local_whatsapp(telefono, caption)
+            enviar_flyer_local_whatsapp(telefono, caption, id_inst, token_inst)
 
         elif paso == "ESPERANDO_COMBO" and mensaje.isdigit():
             opcion = int(mensaje)
@@ -428,7 +408,7 @@ def webhook_whatsapp():
                 total = 20000
                 nombre_combo = "Combo 3 (25 boletas)"
             else:
-                enviar_mensaje_whatsapp(telefono, "❌ Opción inválida. Por favor responde con 1, 2 o 3 según el combo que deseas.")
+                enviar_mensaje_whatsapp(telefono, "❌ Opción inválida. Por favor responde con 1, 2 o 3 según el combo que deseas.", id_inst, token_inst)
                 return jsonify({"status": "ok"}), 200
 
             sesion["datos"]["cantidad"] = cantidad
@@ -439,7 +419,8 @@ def webhook_whatsapp():
                 telefono,
                 f"🎟️ Has elegido el *{nombre_combo}*\nTotal a transferir: *{total:,} Gs.*\n\n"
                 "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Celular / Cuenta:* +595 987 531 881\n\n"
-                "📝 Por favor, escribe tu *Nombre completo* y tu *Cédula* separados por un espacio (Ej: Juan Pérez 1234567)."
+                "📝 Por favor, escribe tu *Nombre completo* y tu *Cédula* separados por un espacio (Ej: Juan Pérez 1234567).",
+                id_inst, token_inst
             )
 
         elif paso == "ESPERANDO_DATOS_CLIENTE" and ("," in mensaje or " " in mensaje):
@@ -497,7 +478,8 @@ def webhook_whatsapp():
             enviar_mensaje_whatsapp(
                 telefono,
                 f"✅ Datos guardados:\n👤 *Nombre:* {nombre_cliente}\n🆔 *CI:* {cedula_cliente}\n🎟️ *Tus números:* {', '.join(numeros_str)}\n\n"
-                "📸 Ahora, por favor **enviá la foto del comprobante de pago (BNF)** para finalizar y asegurar tu participación en los Juegos Locos."
+                "📸 Ahora, por favor **enviá la foto del comprobante de pago (BNF)** para finalizar y asegurar tu participación en los Juegos Locos.",
+                id_inst, token_inst
             )
 
         elif paso == "ESPERANDO_COMPROBANTE" and es_imagen:
@@ -516,7 +498,8 @@ def webhook_whatsapp():
 
             enviar_mensaje_whatsapp(
                 telefono,
-                "🔍 *¡Comprobante recibido con éxito!*\n\nUn administrador verificará tu pago en BNF y te enviará tu boleto oficial con QR. ¡Muchas gracias!"
+                "🔍 *¡Comprobante recibido con éxito!*\n\nUn administrador verificará tu pago en BNF y te enviará tu boleto oficial con QR. ¡Muchas gracias!",
+                id_inst, token_inst
             )
             sesion["paso"] = "INICIO"
 

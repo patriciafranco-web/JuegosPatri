@@ -23,55 +23,51 @@ def formatear_telefono(telefono):
     return tel_limpio
 
 def enviar_mensaje_whatsapp(telefono, texto):
-    def tarea():
-        tel_formateado = formatear_telefono(telefono)
-        url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
-        payload = {"chatId": f"{tel_formateado}@c.us", "message": texto}
-        try:
-            requests.post(url, json=payload)
-        except Exception as e:
-            print(f"❌ Error enviando mensaje Green API: {e}")
-    threading.Thread(target=tarea).start()
+    tel_formateado = formatear_telefono(telefono)
+    url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+    payload = {"chatId": f"{tel_formateado}@c.us", "message": texto}
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        print(f"📩 [TEXTO] Green API respondió: {res.status_code} - {res.text}")
+    except Exception as e:
+        print(f"❌ Error enviando mensaje Green API: {e}")
 
 def enviar_imagen_whatsapp(telefono, url_imagen, caption):
-    def tarea():
-        tel_formateado = formatear_telefono(telefono)
-        url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUrl/{API_TOKEN_INSTANCE}"
-        url_imagen_segura = url_imagen.replace("http://", "https://")
-        payload = {
-            "chatId": f"{tel_formateado}@c.us",
-            "urlFile": url_imagen_segura,
-            "fileName": "flyer_juegos_patri.jpg",
-            "caption": caption,
-        }
-        try:
-            requests.post(url, json=payload)
-        except Exception as e:
-            print(f"❌ Error enviando imagen Green API: {e}")
-    threading.Thread(target=tarea).start()
+    tel_formateado = formatear_telefono(telefono)
+    url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUrl/{API_TOKEN_INSTANCE}"
+    url_imagen_segura = url_imagen.replace("http://", "https://")
+    payload = {
+        "chatId": f"{tel_formateado}@c.us",
+        "urlFile": url_imagen_segura,
+        "fileName": "flyer_juegos_patri.jpeg",
+        "caption": caption,
+    }
+    try:
+        res = requests.post(url, json=payload, timeout=15)
+        print(f"📸 [IMAGEN] Green API respondió: {res.status_code} - {res.text}")
+    except Exception as e:
+        print(f"❌ Error enviando imagen Green API: {e}")
 
 def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
-    def tarea():
-        tel_formateado = formatear_telefono(telefono)
-        url_txt = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
-        try:
-            requests.post(url_txt, json={"chatId": f"{tel_formateado}@c.us", "message": "✅ *¡Pago verificado en BNF!* Generando tu boleto oficial con QR..."})
-        except Exception as e:
-            print(f"❌ Error enviando aviso previo: {e}")
-        
-        output = crear_imagen_boleto_memoria(boleto_id, host_url)
-        if not output: return
-        
-        url_up = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
-        payload = {'chatId': f"{tel_formateado}@c.us", 'caption': caption}
-        files = [('file', (f'ticket_{boleto_id}.png', output.getvalue(), 'image/png'))]
-        
-        try:
-            requests.post(url_up, data=payload, files=files)
-        except Exception as e:
-            print(f"❌ Error subiendo ticket directamente: {e}")
-            
-    threading.Thread(target=tarea).start()
+    tel_formateado = formatear_telefono(telefono)
+    url_txt = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+    try:
+        requests.post(url_txt, json={"chatId": f"{tel_formateado}@c.us", "message": "✅ *¡Pago verificado en BNF!* Generando tu boleto oficial con QR..."}, timeout=10)
+    except Exception as e:
+        print(f"❌ Error enviando aviso previo: {e}")
+    
+    output = crear_imagen_boleto_memoria(boleto_id, host_url)
+    if not output: return
+    
+    url_up = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+    payload = {'chatId': f"{tel_formateado}@c.us", 'caption': caption}
+    files = [('file', (f'ticket_{boleto_id}.png', output.getvalue(), 'image/png'))]
+    
+    try:
+        res = requests.post(url_up, data=payload, files=files, timeout=15)
+        print(f"🎟️ [TICKET] Green API respondió: {res.status_code} - {res.text}")
+    except Exception as e:
+        print(f"❌ Error subiendo ticket directamente: {e}")
 
 CARPETA_DISCO = "/varidata"
 CARPETA_LOCAL = "."

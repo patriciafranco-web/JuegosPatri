@@ -25,7 +25,6 @@ def formatear_telefono(telefono):
     return tel_limpio
 
 def obtener_credenciales(datos_webhook=None):
-    # Si el webhook trae las credenciales de la instancia o queremos usar las globales
     id_inst = ID_INSTANCE
     token_inst = API_TOKEN_INSTANCE
     if datos_webhook and "instanceData" in datos_webhook:
@@ -56,7 +55,6 @@ def enviar_flyer_local_whatsapp(telefono, caption, id_inst=None, token_inst=None
     ruta_final = ruta_jpeg if os.path.exists(ruta_jpeg) else ruta_jpg
 
     if os.path.exists(ruta_final):
-        # En tu instancia tanto apiUrl como mediaUrl son https://7107.api.greenapi.com
         url_up = f"{API_URL}/waInstance{id_usar}/sendFileByUpload/{token_usar}"
         payload = {"chatId": f"{tel_formateado}@c.us", "caption": caption}
         try:
@@ -389,7 +387,7 @@ def webhook_whatsapp():
                 f"1️⃣ *Combo 1:* 5.000 Gs. = 5 boletas\n"
                 f"2️⃣ *Combo 2:* 10.000 Gs. = 12 boletas *(¡El más pedido! ⭐)*\n"
                 f"3️⃣ *Combo 3:* 20.000 Gs. = 25 boletas *(¡Más chances! 🚀)*\n\n"
-                f"*(Responde únicamente con el número de tu combo: 1, 2 o 3)*"
+                f"*(Responde con el número de tu combo 1, 2, 3 o escribe la cantidad exacta de boletas que deseas)*"
             )
             enviar_flyer_local_whatsapp(telefono, caption, id_inst, token_inst)
 
@@ -407,8 +405,13 @@ def webhook_whatsapp():
                 cantidad = 25
                 total = 20000
                 nombre_combo = "Combo 3 (25 boletas)"
+            elif opcion > 3:
+                cantidad = opcion
+                precio_unitario = sorteo["precio"] if sorteo else 1000
+                total = cantidad * precio_unitario
+                nombre_combo = f"Personalizado ({cantidad} boletas)"
             else:
-                enviar_mensaje_whatsapp(telefono, "❌ Opción inválida. Por favor responde con 1, 2 o 3 según el combo que deseas.", id_inst, token_inst)
+                enviar_mensaje_whatsapp(telefono, "❌ Opción inválida. Por favor responde con 1, 2 o 3, o escribe la cantidad exacta de boletas.", id_inst, token_inst)
                 return jsonify({"status": "ok"}), 200
 
             sesion["datos"]["cantidad"] = cantidad
@@ -417,8 +420,8 @@ def webhook_whatsapp():
             sesion["paso"] = "ESPERANDO_DATOS_CLIENTE"
             enviar_mensaje_whatsapp(
                 telefono,
-                f"🎟️ Has elegido el *{nombre_combo}*\nTotal a transferir: *{total:,} Gs.*\n\n"
-                "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Celular / Cuenta:* +595 987 531 881\n\n"
+                f"🎟️ Has elegido: *{nombre_combo}*\nTotal a transferir: *{total:,} Gs.*\n\n"
+                "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Cuenta Alias:* 0981047851\n🔸 *Banco:* BNF\n\n"
                 "📝 Por favor, escribe tu *Nombre completo* y tu *Cédula* separados por un espacio (Ej: Juan Pérez 1234567).",
                 id_inst, token_inst
             )

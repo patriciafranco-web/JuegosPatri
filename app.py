@@ -251,7 +251,6 @@ def obtener_sorteos():
     conn = get_db()
     sorteos = conn.execute("SELECT * FROM sorteos WHERE estado = 'Activo'").fetchall()
     
-    # Calcular boletos vendidos para la barra de progreso
     resultado = []
     for s in sorteos:
         s_dict = dict(s)
@@ -389,15 +388,17 @@ def webhook_whatsapp():
         paso = sesion["paso"]
 
         conn = get_db()
-        sorteo = conn.execute("SELECT * FROM sorteos WHERE estado = 'Activo' LIMIT 1").fetchone()
+        # Selecciona el último sorteo activo automáticamente
+        sorteo = conn.execute("SELECT * FROM sorteos WHERE estado = 'Activo' ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
 
         if "hola" in mensaje_lower or paso == "INICIO":
             sesion["paso"] = "ESPERANDO_COMBO"
             url_flyer = request.host_url.rstrip("/").replace("http://", "https://") + url_for("static", filename="flyer_sorteo.jpeg")
+            titulo_sorteo = sorteo["titulo"] if sorteo else "Sorteo General"
             caption = (
                 f"¡Hola! Bienvenido a *JUEGOS PATRI* 🍀🎱\n"
-                f"Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito 🥩🍺\n\n"
+                f"{titulo_sorteo} 🥩🍺\n\n"
                 f"🔥 *ELIGE TU COMBO:* \n\n"
                 f"1️⃣ *Combo 1:* 5.000 Gs. = 5 boletas\n"
                 f"2️⃣ *Combo 2:* 10.000 Gs. = 12 boletas *(¡El más pedido! ⭐)*\n"
@@ -625,7 +626,6 @@ def admin_datos():
             LIMIT 5
         ''').fetchall()
 
-        # Reporte de ventas por vendedor
         vendedores = conn_fix.execute('''
             SELECT vendedor, COUNT(id) as total_boletos, SUM(CASE WHEN estado='Aprobado' THEN 1 ELSE 0 END) as aprobados
             FROM boletos
@@ -651,7 +651,7 @@ def admin_crear_sorteo():
         cursor.execute('''
             INSERT INTO sorteos (titulo, precio, limite_boletos, estado, imagen_nombre)
             VALUES (?, ?, ?, 'Activo', 'flyer_sorteo.jpeg')
-        ''', (data.get("titulo"), int(data.get("precio", 1000)), int(data.get("limite_boletos", 5000))))
+        ''', (data.get("titulo"), int(data.get("precio", 1000)), int(data.get("limite_boletos", 6500))))
         nuevo_id = cursor.lastrowid
         cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{nuevo_id}", "1"))
         conn.commit()

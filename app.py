@@ -11,9 +11,11 @@ import shutil
 
 app = Flask(__name__)
 
-ID_INSTANCE = "71072280242"
-API_TOKEN_INSTANCE = "a86d8f027e9a4e24bc0e0c5163039e2a79a8bed0e7a045dc9c" 
-# ↑↑ ¡Verifica que este largo texto sea idéntico al de tu panel actual! ↑↑
+# Credenciales exactas de tu panel Green API
+ID_INSTANCE = "71072280242".strip()
+API_TOKEN_INSTANCE = "a86d8f027e9a4e24bc0e0c5163039e2a79a8bed0e7a045dc9c".strip()
+API_URL = "https://7107.api.greenapi.com"
+MEDIA_URL = "https://7107.media.greenapi.com"
 
 def formatear_telefono(telefono):
     tel_limpio = "".join(filter(str.isdigit, str(telefono)))
@@ -25,47 +27,52 @@ def formatear_telefono(telefono):
 
 def enviar_mensaje_whatsapp(telefono, texto):
     tel_formateado = formatear_telefono(telefono)
-    url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+    url = f"{API_URL}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
     payload = {"chatId": f"{tel_formateado}@c.us", "message": texto}
     try:
-        res = requests.post(url, json=payload, timeout=10)
+        res = requests.post(url, json=payload, timeout=12)
         print(f"📩 [TEXTO] Green API respondió: {res.status_code} - {res.text}")
     except Exception as e:
         print(f"❌ Error enviando mensaje Green API: {e}")
 
-def enviar_imagen_whatsapp(telefono, url_imagen, caption):
+def enviar_flyer_local_whatsapp(telefono, caption):
     tel_formateado = formatear_telefono(telefono)
-    url = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUrl/{API_TOKEN_INSTANCE}"
-    url_imagen_segura = url_imagen.replace("http://", "https://")
-    payload = {
-        "chatId": f"{tel_formateado}@c.us",
-        "urlFile": url_imagen_segura,
-        "fileName": "flyer_juegos_patri.jpeg",
-        "caption": caption,
-    }
-    try:
-        res = requests.post(url, json=payload, timeout=15)
-        print(f"📸 [IMAGEN] Green API respondió: {res.status_code} - {res.text}")
-    except Exception as e:
-        print(f"❌ Error enviando imagen Green API: {e}")
+    # Busca automáticamente flyer_sorteo.jpeg o flyer_sorteo.jpg en la carpeta static
+    ruta_jpeg = os.path.join(app.root_path, "static", "flyer_sorteo.jpeg")
+    ruta_jpg = os.path.join(app.root_path, "static", "flyer_sorteo.jpg")
+    ruta_final = ruta_jpeg if os.path.exists(ruta_jpeg) else ruta_jpg
+
+    if os.path.exists(ruta_final):
+        # Usamos MEDIA_URL (7107.media.greenapi.com) que es el requerido para subir archivos sin error 401
+        url_up = f"{MEDIA_URL}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+        payload = {"chatId": f"{tel_formateado}@c.us", "caption": caption}
+        try:
+            with open(ruta_final, "rb") as f:
+                files = [("file", ("flyer_juegos_patri.jpg", f.read(), "image/jpeg"))]
+            res = requests.post(url_up, data=payload, files=files, timeout=20)
+            print(f"📸 [FLYER UPLOAD] Green API respondió: {res.status_code} - {res.text}")
+            if res.status_code == 200:
+                return
+        except Exception as e:
+            print(f"❌ Error subiendo flyer local: {e}")
+
+    # Si por alguna razón falla la subida de imagen, envía el texto de los combos sí o sí para nunca dejar en visto al cliente
+    enviar_mensaje_whatsapp(telefono, caption)
 
 def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
     tel_formateado = formatear_telefono(telefono)
-    url_txt = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
-    try:
-        requests.post(url_txt, json={"chatId": f"{tel_formateado}@c.us", "message": "✅ *¡Pago verificado en BNF!* Generando tu boleto oficial con QR..."}, timeout=10)
-    except Exception as e:
-        print(f"❌ Error enviando aviso previo: {e}")
+    enviar_mensaje_whatsapp(telefono, "✅ *¡Pago verificado en BNF!* Generando tu boleto oficial con QR...")
     
     output = crear_imagen_boleto_memoria(boleto_id, host_url)
-    if not output: return
+    if not output:
+        return
     
-    url_up = f"https://7107.api.greenapi.com/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+    url_up = f"{MEDIA_URL}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
     payload = {'chatId': f"{tel_formateado}@c.us", 'caption': caption}
     files = [('file', (f'ticket_{boleto_id}.png', output.getvalue(), 'image/png'))]
     
     try:
-        res = requests.post(url_up, data=payload, files=files, timeout=15)
+        res = requests.post(url_up, data=payload, files=files, timeout=20)
         print(f"🎟️ [TICKET] Green API respondió: {res.status_code} - {res.text}")
     except Exception as e:
         print(f"❌ Error subiendo ticket directamente: {e}")
@@ -176,7 +183,7 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
             INSERT INTO sorteos (id, titulo, precio, limite_boletos, estado, imagen_nombre)
-            VALUES (1, 'Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito', 1000, 5000, 'Activo', 'flyer_sorteo.jpeg')
+            VALUES (1, 'Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito', 1000, 6500, 'Activo', 'flyer_sorteo.jpeg')
         ''')
     
     conn.commit()
@@ -204,7 +211,6 @@ ADMIN_USERS = {
 bloqueo_compra = threading.Lock()
 SESIONES_WHATSAPP = {}
 
-# --- HILO DE RECORDATORIOS AUTOMÁTICOS ---
 def verificar_pagos_pendientes_background():
     while True:
         try:
@@ -224,7 +230,7 @@ def verificar_pagos_pendientes_background():
                     f"¡Hola, {nombre}! 🍀 Te escribimos de *Juegos Patri*. 🎱\n\n"
                     f"Notamos que tienes un combo pendiente de pago en el **BNF (Patricia Franco)**. "
                     f"¡No te quedes sin asegurar tus números ni participar en los Juegos Locos de hoy!\n\n"
-                    f"Envíjanos tu comprobante por aquí al toque para activar tus boletos. 🚀"
+                    f"Envíanos tu comprobante por aquí al toque para activar tus boletos. 🚀"
                 )
                 enviar_mensaje_whatsapp(tel, texto_recordatorio)
                 time.sleep(3)
@@ -351,6 +357,11 @@ def webhook_whatsapp():
     if not datos:
         return jsonify({"status": "ignored"}), 200
 
+    # Ignorar notificaciones de mensajes salientes propios para evitar bucles
+    tipo_webhook = datos.get("typeWebhook", "")
+    if tipo_webhook and tipo_webhook != "incomingMessageReceived":
+        return jsonify({"status": "ignored_type"}), 200
+
     try:
         senderData = datos.get("senderData", {})
         messageData = datos.get("messageData", {})
@@ -385,13 +396,11 @@ def webhook_whatsapp():
         paso = sesion["paso"]
 
         conn = get_db()
-        # Selecciona el último sorteo activo automáticamente
         sorteo = conn.execute("SELECT * FROM sorteos WHERE estado = 'Activo' ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
 
         if "hola" in mensaje_lower or paso == "INICIO":
             sesion["paso"] = "ESPERANDO_COMBO"
-            url_flyer = request.host_url.rstrip("/").replace("http://", "https://") + url_for("static", filename="flyer_sorteo.jpeg")
             titulo_sorteo = sorteo["titulo"] if sorteo else "Sorteo General"
             caption = (
                 f"¡Hola! Bienvenido a *JUEGOS PATRI* 🍀🎱\n"
@@ -402,7 +411,7 @@ def webhook_whatsapp():
                 f"3️⃣ *Combo 3:* 20.000 Gs. = 25 boletas *(¡Más chances! 🚀)*\n\n"
                 f"*(Responde únicamente con el número de tu combo: 1, 2 o 3)*"
             )
-            enviar_imagen_whatsapp(telefono, url_flyer, caption)
+            enviar_flyer_local_whatsapp(telefono, caption)
 
         elif paso == "ESPERANDO_COMBO" and mensaje.isdigit():
             opcion = int(mensaje)

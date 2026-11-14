@@ -876,31 +876,28 @@ def admin_eliminar_lote(lote_id):
 @app.route("/api/pendientes-impresion", methods=["GET"])
 def obtener_pendientes_impresion():
     conn = get_db()
+    # Devolvemos cada boleto individual que esté aprobado y pendiente de impresión
     boletos_aprobados = conn.execute("SELECT * FROM boletos WHERE estado = 'Aprobado' AND impreso = 0 ORDER BY id ASC").fetchall()
     
     pendientes = []
-    lotes_procesados = set()
     for b in boletos_aprobados:
-        if b["lote_id"] not in lotes_procesados:
-            lotes_procesados.add(b["lote_id"])
-            sorteo = conn.execute("SELECT titulo FROM sorteos WHERE id = ?", (b["sorteo_id"],)).fetchone()
-            nums = conn.execute("SELECT id FROM boletos WHERE lote_id = ? ORDER BY id ASC", (b["lote_id"],)).fetchall()
-            if nums:
-                pendientes.append({
-                    "id": b["lote_id"],
-                    "sorteo_titulo": sorteo["titulo"] if sorteo else "Sorteo",
-                    "nombre": b["nombre"],
-                    "cedula": b["cedula"],
-                    "telefono": b["telefono"],
-                    "numeros_asignados": [str(x["id"]).zfill(5) for x in nums]
-                })
+        sorteo = conn.execute("SELECT titulo FROM sorteos WHERE id = ?", (b["sorteo_id"],)).fetchone()
+        pendientes.append({
+            "id": b["id"],
+            "lote_id": b["lote_id"],
+            "sorteo_titulo": sorteo["titulo"] if sorteo else "Sorteo",
+            "nombre": b["nombre"],
+            "cedula": b["cedula"],
+            "telefono": b["telefono"],
+            "numero_asignado": str(b["id"]).zfill(5)
+        })
     conn.close()
     return jsonify(pendientes), 200
 
-@app.route("/api/marcar-impreso/<int:lote_id>", methods=["POST"])
-def marcar_como_impreso(lote_id):
+@app.route("/api/marcar-impreso/<int:boleto_id>", methods=["POST"])
+def marcar_como_impreso(boleto_id):
     conn = get_db()
-    conn.execute("UPDATE boletos SET impreso = 1 WHERE lote_id = ?", (lote_id,))
+    conn.execute("UPDATE boletos SET impreso = 1 WHERE id = ?", (boleto_id,))
     conn.commit()
     conn.close()
     respaldar_base_datos()

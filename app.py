@@ -8,12 +8,17 @@ from flask import Flask, jsonify, render_template, request, send_file, url_for
 from PIL import Image, ImageDraw, ImageFont
 import requests
 import shutil
+import anthropic
 
 app = Flask(__name__)
 
 ID_INSTANCE = os.environ.get("ID_INSTANCE", "710722800257").strip()
 API_TOKEN_INSTANCE = os.environ.get("API_TOKEN_INSTANCE", "5c2bc8276faf4842a7aa71d55b5d569f8a3d841ec9f24301aa").strip()
 API_URL = "https://7107.api.greenapi.com"
+
+# Configuración segura de Anthropic Claude desde variables de entorno
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+client_anthropic = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 
 def formatear_telefono(telefono):
     tel_limpio = "".join(filter(str.isdigit, str(telefono)))
@@ -424,6 +429,7 @@ def webhook_whatsapp():
         sorteo = conn.execute("SELECT * FROM sorteos WHERE estado = 'Activo' ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
 
+        # 1. FLUJO TRADICIONAL DE INICIO (Muestra el Flyer y los Combos)
         if "hola" in mensaje_lower or paso == "INICIO":
             sesion["paso"] = "ESPERANDO_COMBO"
             titulo_sorteo = sorteo["titulo"] if sorteo else "Sorteo General"
@@ -441,6 +447,7 @@ def webhook_whatsapp():
             )
             enviar_flyer_local_whatsapp(telefono, caption, id_inst, token_inst)
 
+        # 2. SELECCIÓN DE COMBO POR NÚMERO (Robot Tradicional)
         elif paso == "ESPERANDO_COMBO" and mensaje.isdigit():
             opcion = int(mensaje)
             precio_unitario = sorteo["precio"] if sorteo else 2000
@@ -477,6 +484,7 @@ def webhook_whatsapp():
                 id_inst, token_inst
             )
 
+        # 3. CAPTURA DE DATOS DEL CLIENTE (Nombre y Cédula)
         elif paso == "ESPERANDO_DATOS_CLIENTE" and ("," in mensaje or " " in mensaje):
             if "," in mensaje:
                 partes = mensaje.split(",")
@@ -536,6 +544,7 @@ def webhook_whatsapp():
                 id_inst, token_inst
             )
 
+        # 4. RECEPCIÓN DE LA FOTO DEL COMPROBANTE
         elif paso == "ESPERANDO_COMPROBANTE" and es_imagen:
             file_data = messageData.get("fileMessageData", {})
             download_url = file_data.get("downloadUrl", "")
@@ -556,6 +565,29 @@ def webhook_whatsapp():
                 id_inst, token_inst
             )
             sesion["paso"] = "INICIO"
+
+        # 5. MENSAJES ABIERTOS / CONSULTAS (ENTRA CLAUDE A RESPONDER)
+        else:
+            if client_anthropic:
+                prompt_asistente = f"""
+                Eres el asistente virtual amable de 'Juegos Patri'. El usuario te ha escrito un mensaje abierto: "{mensaje}".
+                Ayúdale con su duda sobre el sorteo de la mesa de billar, los combos o los juegos locos. 
+                Si está intentando comprar, recuérdale amablemente que responda con el número de opción del menú o sus datos. 
+                Sé breve y directo para WhatsApp.
+                """
+                try:
+                    message = client_anthropic.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=250,
+                        messages=[{"role": "user", "content": prompt_asistente}]
+                    )
+                    respuesta_claude = message.content[0].text.strip()
+                    enviar_mensaje_whatsapp(telefono, respuesta_claude, id_inst, token_inst)
+                except Exception as e:
+                    print(f"Error Claude abierto: {e}")
+                    enviar_mensaje_whatsapp(telefono, "Por favor, selecciona una opción válida del menú o escribe 'Hola' para ver los combos.", id_inst, token_inst)
+            else:
+                enviar_mensaje_whatsapp(telefono, "Por favor, responde con el número de la opción deseada o escribe 'Hola' para ver el menú principal.", id_inst, token_inst)
 
     except Exception as e:
         print(f"❌ Error procesando webhook: {e}")

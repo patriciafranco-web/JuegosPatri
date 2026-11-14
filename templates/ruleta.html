@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruleta de la Suerte - Juegos Patri</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+    <div class="bg-slate-800 p-8 rounded-3xl shadow-2xl border border-slate-700 max-w-xl w-full text-center space-y-6">
+        <h1 class="text-3xl font-black text-amber-400">🎡 Sorteo en Vivo - Juegos Locos</h1>
+        <p class="text-sm text-slate-300">Participantes oficiales habilitados en la base de datos para este sorteo.</p>
+        
+        <div id="pantallaGanador" class="bg-slate-900 p-6 rounded-2xl border border-amber-500/50 min-h-[140px] flex flex-col items-center justify-center space-y-2">
+            <span id="textoParticipante" class="text-xl font-bold text-slate-400">¡Listo para girar la ruleta!</span>
+        </div>
+
+        <button onclick="girarRuleta()" id="btnGirar" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-lg transition shadow-lg cursor-pointer">
+            ¡Girar Ruleta Ahora! 🎲
+        </button>
+        
+        <div class="pt-4 border-t border-slate-700">
+            <a href="/admin" class="text-xs text-slate-400 hover:text-amber-400 underline">Volver al Panel de Administración</a>
+        </div>
+    </div>
+
+    <script>
+        const participantes = {{ participantes | safe }};
+
+        function girarRuleta() {
+            if (participantes.length === 0) {
+                alert("No hay participantes aprobados en el sistema todavía.");
+                return;
+            }
+
+            const btn = document.getElementById('btnGirar');
+            const pantalla = document.getElementById('textoParticipante');
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            let contador = 0;
+            const maxIntentos = 35;
+            
+            const intervalo = setInterval(() => {
+                const aleatorio = participantes[Math.floor(Math.random() * participantes.length)];
+                pantalla.innerHTML = `<span class="text-amber-300 text-2xl font-black">#${String(aleatorio.id).zfill ? String(aleatorio.id).zfill(5) : aleatorio.id}</span> <span class="block text-white text-base">${aleatorio.nombre}</span>`;
+                contador++;
+                
+                if (contador >= maxIntentos) {
+                    clearInterval(intervalo);
+                    const ganadorFinal = participantes[Math.floor(Math.random() * participantes.length)];
+                    pantalla.innerHTML = `
+                        <span class="text-xs uppercase tracking-widest text-emerald-400 font-extrabold animate-pulse">🎉 ¡GANADOR OFICIAL DE LOS JUEGOS LOCOS! 🎉</span>
+                        <span class="text-3xl font-black text-amber-400 mt-1">Boleto #${String(ganadorFinal.id).padStart(5, '0')}</span>
+                        <span class="text-lg font-bold text-white mt-1">${ganadorFinal.nombre}</span>
+                    `;
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }, 80);
+        }
+    </script>
+</body>
+</html>

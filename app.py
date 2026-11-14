@@ -566,35 +566,97 @@ def webhook_whatsapp():
             )
             sesion["paso"] = "INICIO"
 
-        # 5. MENSAJES ABIERTOS / CONSULTAS (ENTRA CLAUDE A RESPONDER)
+        # 5. MENSAJES ABIERTOS / COMPRAS DIRECTAS (CLAUDE PROCESA LA ORDEN)
         else:
             if client_anthropic:
                 prompt_asistente = f"""
-                Eres el asistente virtual amable de 'Juegos Patri'. El usuario te ha escrito un mensaje abierto: "{mensaje}".
-                Ayúdale con su duda sobre el sorteo de la mesa de billar, los combos o los juegos locos. 
-                Si está intentando comprar, recuérdale amablemente que responda con el número de opción del menú o sus datos. 
-                Sé breve y directo para WhatsApp.
+                Eres el asistente virtual experto de 'Juegos Patri'. El usuario ha escrito un mensaje libre: "{mensaje}".
+                
+                Analiza si el mensaje contiene una intención de compra o reserva de boletos (buscando la cantidad de boletos, el nombre de la persona y su número de cédula).
+                
+                Responde ÚNICAMENTE en formato JSON estricto (sin texto adicional fuera del JSON) con las siguientes llaves:
+                - "es_compra": true si menciona cantidad y datos para comprar, false si es una duda general.
+                - "cantidad": número entero de boletos que desea (si pide un combo, calcula el total de boletos).
+                - "nombre": nombre completo extraído del mensaje (o null si no está).
+                - "cedula": número de cédula extraído del mensaje (o null si no está).
+                - "respuesta_texto": un mensaje amable para WhatsApp guiando al usuario o confirmando su pedido.
                 """
                 try:
                     message = client_anthropic.messages.create(
                         model="claude-sonnet-5-5",
-                        max_tokens=250,
+                        max_tokens=300,
                         messages=[{"role": "user", "content": prompt_asistente}]
                     )
                     
-                    # Extracción segura compatible con bloques de texto de Anthropic
-                    respuesta_claude = ""
+                    texto_res = ""
                     for content_block in message.content:
                         if hasattr(content_block, 'text'):
-                            respuesta_claude += content_block.text
+                            texto_res += content_block.text
 
-                    if not respuesta_claude:
-                        respuesta_claude = "Por favor, selecciona una opción válida del menú o escribe 'Hola' para ver los combos."
+                    datos_ia = json.loads(texto_res.strip().replace("```json", "").replace("```", ""))
+                    
+                    if datos_ia.get("es_compra") and datos_ia.get("cantidad") and datos_ia.get("nombre") and datos_ia.get("cedula"):
+                        cantidad = int(datos_ia.get("cantidad"))
+                        nombre_cliente = str(datos_ia.get("nombre")).strip()
+                        cedula_cliente = str(datos_ia.get("cedula")).strip()
+                        
+                        with bloqueo_compra:
+                            conn = get_db()
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT OR REPLACE INTO clientes (telefono, nombre, cedula) VALUES (?, ?, ?)", (telefono, nombre_cliente, cedula_cliente))
+                            
+                            sorteo_id = sorteo["id"] if sorteo else 1
+                            precio_unitario = sorteo["precio"] if sorteo else 2000
+                            total_a_pagar = cantidad * precio_unitario
 
-                    enviar_mensaje_whatsapp(telefono, respuesta_claude.strip(), id_inst, token_inst)
+                            lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
+                            current_lote = int(lote_row["valor"]) if lote_row else 1
+                            cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
+
+                            nuevos_boletos_ids = []
+                            for _ in range(cantidad):
+                                liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
+                                if liberado:
+                                    num_boleto = liberado["numero"]
+                                    cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
+                                else:
+                                    cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
+                                    num_boleto = int(cont_row["valor"]) if cont_row else 1
+                                    cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
+                                nuevos_boletos_ids.append(num_boleto)
+
+                            numeros_str = []
+                            for num_boleto in nuevos_boletos_ids:
+                                cursor.execute('''
+                                    INSERT INTO boletos (id, sorteo_id, lote_id, nombre, telefono, cedula, cantidad_lote, imagen_comprobante, metodo_pago, detalle_pago, estado, impreso, es_juego_loco, vendedor)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', 0, 0, 'WhatsApp IA')
+                                ''', (num_boleto, sorteo_id, current_lote, nombre_cliente, telefono, cedula_cliente, cantidad, "", "WhatsApp / BNF", "Transferencia BNF"))
+                                numeros_str.append(str(num_boleto).zfill(5))
+
+                            conn.commit()
+                            conn.close()
+                            respaldar_base_datos()
+
+                        sesion["datos"]["lote_id"] = current_lote
+                        sesion["paso"] = "ESPERANDO_COMPROBANTE"
+
+                        enviar_mensaje_whatsapp(
+                            telefono,
+                            f"🤖 *¡Pedido procesado por IA con éxito!*\n\n"
+                            f"👤 *Nombre:* {nombre_cliente}\n"
+                            f"🆔 *CI:* {cedula_cliente}\n"
+                            f"🎟️ *Tus números:* {', '.join(numeros_str)}\n"
+                            f"💰 *Total a transferir:* {total_a_pagar:,} Gs.\n\n"
+                            "🏦 *Datos para el pago (BNF):*\n🔸 *Titular:* Patricia Franco\n🔸 *Cuenta / Alias:* 0981047851\n\n"
+                            "📸 Ahora, por favor **enviá la foto del comprobante de pago** para finalizar.",
+                            id_inst, token_inst
+                        )
+                    else:
+                        enviar_mensaje_whatsapp(telefono, datos_ia.get("respuesta_texto", "¡Hola! Escribe 'Hola' para ver los combos disponibles."), id_inst, token_inst)
+
                 except Exception as e:
-                    print(f"❌ Error Claude abierto: {e}")
-                    enviar_mensaje_whatsapp(telefono, "Por favor, selecciona una opción válida del menú o escribe 'Hola' para ver los combos.", id_inst, token_inst)
+                    print(f"❌ Error Claude procesamiento IA: {e}")
+                    enviar_mensaje_whatsapp(telefono, "Por favor, selecciona una opción válida del menú (1, 2 o 3) o escribe 'Hola' para ver los combos.", id_inst, token_inst)
             else:
                 enviar_mensaje_whatsapp(telefono, "Por favor, responde con el número de la opción deseada o escribe 'Hola' para ver el menú principal.", id_inst, token_inst)
 

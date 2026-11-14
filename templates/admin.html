@@ -36,6 +36,49 @@
             <button onclick="cerrarSesion()" class="bg-rose-600 hover:bg-rose-500 text-xs font-bold px-4 py-2 rounded-xl transition">Cerrar Sesión</button>
         </header>
 
+        <!-- HERRAMIENTAS DE MARKETING Y JUEGOS LOCOS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- DIFUSIÓN MASIVA -->
+            <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 space-y-4">
+                <h2 class="text-lg font-bold text-amber-300">📢 Difusión de "Juegos Locos"</h2>
+                <p class="text-xs text-slate-400">Envía un mensaje relámpago a todos los clientes registrados por WhatsApp.</p>
+                <textarea id="textoDifusion" rows="2" placeholder="Ej: ⚡ ¡Juego Loco Flash activo! Compra tu combo ahora..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
+                <button onclick="enviarDifusion()" class="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-2.5 rounded-xl text-white transition text-sm shadow-lg">
+                    Enviar Difusión Masiva 🚀
+                </button>
+            </div>
+
+            <!-- RULETA EN VIVO -->
+            <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 flex flex-col justify-between space-y-4">
+                <div>
+                    <h2 class="text-lg font-bold text-amber-300">🎡 Sorteo en Vivo (Ruleta)</h2>
+                    <p class="text-xs text-slate-400">Abre la pantalla interactiva para realizar los sorteos de los Juegos Locos frente a tus clientes.</p>
+                </div>
+                <a href="/ruleta" target="_blank" class="w-full bg-blue-600 hover:bg-blue-500 font-bold py-3 rounded-xl text-white transition text-sm shadow-lg text-center block">
+                    Abrir Ruleta de la Suerte 🎲
+                </a>
+            </div>
+        </div>
+
+        <!-- TOP 5 COMPRADORES -->
+        <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 space-y-4">
+            <h2 class="text-lg font-bold text-amber-300">🏆 Top 5 Mayores Compradores</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
+                            <th class="p-3">Posición</th>
+                            <th class="p-3">Comprador</th>
+                            <th class="p-3">Cédula</th>
+                            <th class="p-3">Boletos</th>
+                            <th class="p-3">WhatsApp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaTopCompradores" class="text-sm divide-y divide-slate-700/50"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- CREAR NUEVO SORTEO -->
         <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
             <h2 class="text-lg font-bold mb-4 text-amber-300">Crear Nuevo Sorteo / Rifa</h2>
@@ -46,7 +89,7 @@
                 </div>
                 <div>
                     <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Precio por Boleto (Gs.)</label>
-                    <input type="number" id="nuevoPrecio" required value="1000" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
+                    <input type="number" id="nuevoPrecio" required value="2000" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
                 </div>
                 <div>
                     <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Límite Total de Boletos</label>
@@ -141,6 +184,7 @@
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('adminPanel').classList.remove('hidden');
                 cargarDatosAdmin();
+                cargarTopCompradores();
             } else { cerrarSesion(); }
         }
 
@@ -162,10 +206,64 @@
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('adminPanel').classList.remove('hidden');
                 cargarDatosAdmin();
+                cargarTopCompradores();
             } else {
                 document.getElementById('errorLogin').innerText = "Usuario o contraseña incorrectos.";
             }
         });
+
+        async function enviarDifusion() {
+            const mensaje = document.getElementById('textoDifusion').value.trim();
+            if (!mensaje) { alert("Escribe un mensaje para enviar."); return; }
+            if (!confirm("¿Enviar esta difusión masiva a todos los clientes?")) return;
+
+            const res = await fetch('/api/admin/difusion-masiva', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ usuario: currentUser, password: currentPass, mensaje: mensaje })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                alert(data.mensaje);
+                document.getElementById('textoDifusion').value = '';
+            } else {
+                alert(data.error || "Error al enviar difusión");
+            }
+        }
+
+        async function cargarTopCompradores() {
+            try {
+                const res = await fetch('/api/top-compradores');
+                const data = await res.json();
+                const tabla = document.getElementById('tablaTopCompradores');
+                tabla.innerHTML = '';
+                if(data.length === 0) {
+                    tabla.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Aún no hay compras aprobadas registradas.</td></tr>`;
+                    return;
+                }
+                data.forEach((item, index) => {
+                    let medalla = `#${index + 1}`;
+                    if(index === 0) medalla = '🥇 1° Lugar';
+                    if(index === 1) medalla = '🥈 2° Lugar';
+                    if(index === 2) medalla = '🥉 3° Lugar';
+
+                    const textoWs = encodeURIComponent(`🔥 ¡Estoy en el ${medalla} del ranking de mayores compradores en JUEGOS PATRI con ${item.total_boletos} boletos para la Mesa de Billar! 🎱🏆`);
+
+                    tabla.innerHTML += `
+                        <tr class="hover:bg-slate-700/30">
+                            <td class="p-3 font-bold text-amber-400">${medalla}</td>
+                            <td class="p-3 font-semibold text-white">${item.nombre}</td>
+                            <td class="p-3 text-slate-300">CI: ${item.cedula}</td>
+                            <td class="p-3 text-emerald-400 font-extrabold">${item.total_boletos} boletos</td>
+                            <td class="p-3">
+                                <a href="https://api.whatsapp.com/send?text=${textoWs}" target="_blank" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition shadow inline-flex items-center space-x-1">
+                                    <span>Compartir 📢</span>
+                                </a>
+                            </td>
+                        </tr>`;
+                });
+            } catch(e) { console.error("Error top compradores", e); }
+        }
 
         function abrirModal(src) {
             document.getElementById('imgEnModal').src = src;
@@ -215,7 +313,6 @@
                         </div>`;
                 });
 
-                // Renderizar Reporte de Vendedores
                 const divVendedores = document.getElementById('listaVendedores');
                 divVendedores.innerHTML = '';
                 if(data.reporte_vendedores && data.reporte_vendedores.length > 0) {
@@ -347,7 +444,7 @@
                 body: JSON.stringify({ usuario: currentUser, password: currentPass })
             });
             const data = await res.json();
-            if(res.ok) { alert(data.mensaje); cargarDatosAdmin(); } else { alert(data.error); }
+            if(res.ok) { alert(data.mensaje); cargarDatosAdmin(); cargarTopCompradores(); } else { alert(data.error); }
         }
 
         async function eliminarLote(loteId) {

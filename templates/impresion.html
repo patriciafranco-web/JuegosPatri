@@ -6,36 +6,59 @@
     <title>Módulo de Impresión Silenciosa - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* En pantalla normal ocultamos el ticket y mostramos el panel */
         #zonaTicket { display: none; }
 
-        /* Al momento de imprimir, ocultamos el panel y mostramos SOLO el ticket de 58mm */
         @media print {
-            @page { size: 58mm auto; margin: 0; }
-            body { background: white !important; color: black !important; margin: 0 !important; padding: 0 !important; }
+            @page { size: 58mm auto; margin: 0mm; }
+            html, body {
+                background: white !important;
+                color: black !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                min-height: auto !important;
+                height: auto !important;
+                display: block !important;
+            }
             #panelControl { display: none !important; }
             #zonaTicket {
                 display: block !important;
-                width: 48mm;
-                margin: 0 auto;
-                padding: 2px;
-                font-family: monospace;
-                text-align: center;
-                background: white;
-                color: black;
+                width: 46mm !important;
+                margin: 0 auto !important;
+                padding-top: 2mm !important;
+                padding-bottom: 12mm !important;
+                font-family: monospace !important;
+                text-align: center !important;
+                background: white !important;
+                color: black !important;
             }
-            #zonaTicket h2 { margin: 2px 0; font-size: 13px; font-weight: bold; }
-            #zonaTicket p { margin: 2px 0; font-size: 9px; line-height: 1.1; word-break: break-word; }
-            .linea { border-bottom: 1px dashed black; margin: 4px 0; }
-            .numeros { font-size: 11px; font-weight: bold; margin: 5px 0; word-break: break-all; }
-            .qr { margin-top: 4px; text-align: center; }
-            .qr img { width: 75px; height: 75px; display: block; margin: 0 auto; }
+            #zonaTicket h2 { margin: 2px 0 !important; font-size: 13px !important; font-weight: bold !important; }
+            #zonaTicket p { margin: 2px 0 !important; font-size: 9px !important; line-height: 1.15 !important; word-break: break-word !important; }
+            .linea { border-bottom: 1px dashed black !important; margin: 4px 0 !important; }
+            .numeros { font-size: 12px !important; font-weight: bold !important; margin: 5px 0 !important; word-break: break-all !important; }
+            .qr-box {
+                margin: 6px auto !important;
+                text-align: center !important;
+                display: flex !important;
+                justify-content: center !important;
+            }
+            .qr-box img {
+                width: 26mm !important;
+                height: 26mm !important;
+                max-width: 26mm !important;
+                display: block !important;
+                margin: 0 auto !important;
+            }
+            .espacio-corte {
+                display: block !important;
+                margin-top: 8mm !important;
+                font-size: 8px !important;
+                color: black !important;
+            }
         }
     </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6 font-sans">
     
-    <!-- Panel visible en la computadora -->
     <div id="panelControl" class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-lg w-full text-center space-y-6">
         <h1 class="text-2xl font-black text-amber-400">🖨️ Módulo de Impresión Automática</h1>
         <p class="text-sm text-slate-300">Mantén esta pestaña abierta en la computadora conectada a tu impresora térmica FTX TDR058U.</p>
@@ -49,7 +72,6 @@
         </button>
     </div>
 
-    <!-- Contenedor directo para la impresora térmica (sin abrir pestañas ni iframes) -->
     <div id="zonaTicket"></div>
 
     <script>
@@ -77,7 +99,7 @@
                     imprimiendo = true;
                     for (let lote of pendientes) {
                         await imprimirEnMismaPagina(lote);
-                        await new Promise(r => setTimeout(r, 2500));
+                        await new Promise(r => setTimeout(r, 3000));
                     }
                     imprimiendo = false;
                 }
@@ -90,7 +112,8 @@
         function imprimirEnMismaPagina(lote) {
             return new Promise((resolve) => {
                 const zona = document.getElementById('zonaTicket');
-                const urlQr = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}`;
+                // margin=2 agrega un borde blanco protector alrededor del QR para que nunca se corte
+                const urlQr = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=2&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}`;
 
                 zona.innerHTML = `
                     <h2>JUEGOS PATRI</h2>
@@ -103,9 +126,10 @@
                     <div class="numeros">${lote.numeros_asignados.map(n => '#' + n).join(', ')}</div>
                     <div class="linea"></div>
                     <p>¡Participas en los Juegos Locos!</p>
-                    <div class="qr">
+                    <div class="qr-box">
                         <img id="qrImg" src="${urlQr}">
                     </div>
+                    <div class="espacio-corte">. . . . . . . . . . . .</div>
                 `;
 
                 const img = document.getElementById('qrImg');
@@ -116,12 +140,11 @@
                     resolve();
                 };
 
-                // Esperar a que el código QR cargue antes de mandar a la térmica
                 if (img.complete) {
-                    setTimeout(lanzarImpresion, 150);
+                    setTimeout(lanzarImpresion, 250);
                 } else {
-                    img.onload = () => setTimeout(lanzarImpresion, 150);
-                    img.onerror = () => setTimeout(lanzarImpresion, 150);
+                    img.onload = () => setTimeout(lanzarImpresion, 250);
+                    img.onerror = () => setTimeout(lanzarImpresion, 250);
                 }
             });
         }

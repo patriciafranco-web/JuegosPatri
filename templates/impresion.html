@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Módulo de Impresión - Juegos Patri</title>
+    <title>Módulo de Impresión Silenciosa - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6 font-sans">
     <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-lg w-full text-center space-y-6">
-        <h1 class="text-2xl font-black text-amber-400">🖨️ Módulo de Impresión Directa</h1>
+        <h1 class="text-2xl font-black text-amber-400">🖨️ Módulo de Impresión Automática</h1>
         <p class="text-sm text-slate-300">Mantén esta pestaña abierta en la computadora conectada a tu impresora térmica FTX TDR058U.</p>
         
         <div id="estadoConexion" class="bg-slate-900 p-4 rounded-xl border border-slate-700 text-xs font-mono text-amber-400">
@@ -20,11 +20,15 @@
         </button>
     </div>
 
+    <!-- Iframe oculto para impresión silenciosa directa -->
+    <iframe id="iframeImpresion" style="display:none;"></iframe>
+
     <script>
         let sistemaActivo = false;
 
         function activarImpresion() {
             sistemaActivo = true;
+            document.getElementById('estadoConexionclassName'] = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
             document.getElementById('estadoConexion').className = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
             document.getElementById('estadoConexion').innerText = "🟢 Sistema Activo y Escuchando Tickets...";
             document.getElementById('btnActivar').style.display = 'none';
@@ -39,8 +43,8 @@
                 
                 if (pendientes && pendientes.length > 0) {
                     for (let lote of pendientes) {
-                        imprimirLote(lote);
-                        await new Promise(r => setTimeout(r, 3000));
+                        imprimirLoteSilencioso(lote);
+                        await new Promise(r => setTimeout(r, 4000));
                     }
                 }
             } catch (e) {
@@ -48,9 +52,9 @@
             }
         }
 
-        async function imprimirLote(lote) {
-            let ventana = window.open('', '_blank', 'width=300,height=400');
-            if (!ventana) return;
+        function imprimirLoteSilencioso(lote) {
+            let iframe = document.getElementById('iframeImpresion');
+            let doc = iframe.contentWindow.document;
 
             let htmlTicket = `
                 <!DOCTYPE html>
@@ -87,18 +91,19 @@
                         window.onload = function() {
                             setTimeout(() => {
                                 window.print();
-                                setTimeout(() => { window.close(); }, 800);
-                            }, 400);
+                            }, 300);
                         };
                     <\/script>
                 </body>
                 </html>
             `;
 
-            ventana.document.write(htmlTicket);
-            ventana.document.close();
+            doc.open();
+            doc.write(htmlTicket);
+            doc.close();
 
-            await fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });
+            // Marcar como impreso en el servidor
+            fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });
         }
     </script>
 </body>

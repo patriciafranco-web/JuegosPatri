@@ -15,7 +15,7 @@
             ⏳ Esperando activación del sistema...
         </div>
 
-        <button onclick="activarImpresion()" id="btnActivar" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg text-sm">
+        <button onclick="activarImpresion()" id="btnActivar" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg text-sm cursor-pointer">
             🚀 Activar Sistema Ahora
         </button>
     </div>
@@ -28,10 +28,13 @@
 
         function activarImpresion() {
             sistemaActivo = true;
-            document.getElementById('estadoConexionclassName'] = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
-            document.getElementById('estadoConexion').className = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
-            document.getElementById('estadoConexion').innerText = "🟢 Sistema Activo y Escuchando Tickets...";
+            let cajaEstado = document.getElementById('estadoConexion');
+            cajaEstado.className = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
+            cajaEstado.innerText = "🟢 Sistema Activo y Escuchando Tickets...";
             document.getElementById('btnActivar').style.display = 'none';
+            
+            // Verificar inmediatamente y luego cada 4 segundos
+            verificarPendientes();
             setInterval(verificarPendientes, 4000);
         }
 

@@ -577,7 +577,7 @@ def webhook_whatsapp():
                 """
                 try:
                     message = client_anthropic.messages.create(
-                        model="claude-3-5-sonnet-20241022",
+                        model="claude-sonnet-5-5",
                         max_tokens=250,
                         messages=[{"role": "user", "content": prompt_asistente}]
                     )

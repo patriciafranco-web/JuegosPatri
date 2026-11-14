@@ -5,9 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Módulo de Impresión Silenciosa - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* En pantalla normal ocultamos el ticket y mostramos el panel */
+        #zonaTicket { display: none; }
+
+        /* Al momento de imprimir, ocultamos el panel y mostramos SOLO el ticket de 58mm */
+        @media print {
+            @page { size: 58mm auto; margin: 0; }
+            body { background: white !important; color: black !important; margin: 0 !important; padding: 0 !important; }
+            #panelControl { display: none !important; }
+            #zonaTicket {
+                display: block !important;
+                width: 48mm;
+                margin: 0 auto;
+                padding: 2px;
+                font-family: monospace;
+                text-align: center;
+                background: white;
+                color: black;
+            }
+            #zonaTicket h2 { margin: 2px 0; font-size: 13px; font-weight: bold; }
+            #zonaTicket p { margin: 2px 0; font-size: 9px; line-height: 1.1; word-break: break-word; }
+            .linea { border-bottom: 1px dashed black; margin: 4px 0; }
+            .numeros { font-size: 11px; font-weight: bold; margin: 5px 0; word-break: break-all; }
+            .qr { margin-top: 4px; text-align: center; }
+            .qr img { width: 75px; height: 75px; display: block; margin: 0 auto; }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6 font-sans">
-    <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-lg w-full text-center space-y-6">
+    
+    <!-- Panel visible en la computadora -->
+    <div id="panelControl" class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-lg w-full text-center space-y-6">
         <h1 class="text-2xl font-black text-amber-400">🖨️ Módulo de Impresión Automática</h1>
         <p class="text-sm text-slate-300">Mantén esta pestaña abierta en la computadora conectada a tu impresora térmica FTX TDR058U.</p>
         
@@ -20,8 +49,12 @@
         </button>
     </div>
 
+    <!-- Contenedor directo para la impresora térmica (sin abrir pestañas ni iframes) -->
+    <div id="zonaTicket"></div>
+
     <script>
         let sistemaActivo = false;
+        let imprimiendo = false;
 
         function activarImpresion() {
             sistemaActivo = true;
@@ -35,45 +68,31 @@
         }
 
         async function verificarPendientes() {
-            if (!sistemaActivo) return;
+            if (!sistemaActivo || imprimiendo) return;
             try {
                 const res = await fetch('/api/pendientes-impresion');
                 const pendientes = await res.json();
                 
                 if (pendientes && pendientes.length > 0) {
+                    imprimiendo = true;
                     for (let lote of pendientes) {
-                        imprimirLoteDirecto(lote);
-                        await new Promise(r => setTimeout(r, 4000));
+                        await imprimirEnMismaPagina(lote);
+                        await new Promise(r => setTimeout(r, 2500));
                     }
+                    imprimiendo = false;
                 }
             } catch (e) {
                 console.error("Error consultando pendientes:", e);
+                imprimiendo = false;
             }
         }
 
-        function imprimirLoteDirecto(lote) {
-            // Creamos una ventana emergente ultra pequeña fuera de la vista o minimizada
-            let ventana = window.open('', '_blank', 'width=100,height=100,left=-1000,top=-1000');
-            if (!ventana) return;
+        function imprimirEnMismaPagina(lote) {
+            return new Promise((resolve) => {
+                const zona = document.getElementById('zonaTicket');
+                const urlQr = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}`;
 
-            let htmlTicket = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Ticket #${lote.id}</title>
-                    <style>
-                        @page { size: 58mm auto; margin: 0; }
-                        body { width: 48mm; margin: 0 auto; padding: 2px; font-family: monospace; text-align: center; background: white; color: black; }
-                        h2 { margin: 2px 0; font-size: 13px; font-weight: bold; }
-                        p { margin: 2px 0; font-size: 9px; line-height: 1.1; word-break: break-word; }
-                        .linea { border-bottom: 1px dashed black; margin: 4px 0; }
-                        .numeros { font-size: 11px; font-weight: bold; margin: 5px 0; word-break: break-all; }
-                        .qr { margin-top: 4px; text-align: center; }
-                        .qr img { width: 75px; height: 75px; display: block; margin: 0 auto; }
-                    </style>
-                </head>
-                <body>
+                zona.innerHTML = `
                     <h2>JUEGOS PATRI</h2>
                     <p>${lote.sorteo_titulo}</p>
                     <div class="linea"></div>
@@ -85,27 +104,26 @@
                     <div class="linea"></div>
                     <p>¡Participas en los Juegos Locos!</p>
                     <div class="qr">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}">
+                        <img id="qrImg" src="${urlQr}">
                     </div>
-                    <script>
-                        window.onload = function() {
-                            setTimeout(() => {
-                                window.print();
-                            }, 200);
-                        };
-                        window.onafterprint = function() {
-                            window.close();
-                        };
-                    <\/script>
-                </body>
-                </html>
-            `;
+                `;
 
-            ventana.document.write(htmlTicket);
-            ventana.document.close();
+                const img = document.getElementById('qrImg');
+                
+                const lanzarImpresion = async () => {
+                    window.print();
+                    await fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });
+                    resolve();
+                };
 
-            // Marcar como impreso en el servidor
-            fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });
+                // Esperar a que el código QR cargue antes de mandar a la térmica
+                if (img.complete) {
+                    setTimeout(lanzarImpresion, 150);
+                } else {
+                    img.onload = () => setTimeout(lanzarImpresion, 150);
+                    img.onerror = () => setTimeout(lanzarImpresion, 150);
+                }
+            });
         }
     </script>
 </body>

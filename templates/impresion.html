@@ -20,9 +20,6 @@
         </button>
     </div>
 
-    <!-- Iframe oculto para impresión silenciosa directa -->
-    <iframe id="iframeImpresion" style="display:none;"></iframe>
-
     <script>
         let sistemaActivo = false;
 
@@ -33,7 +30,6 @@
             cajaEstado.innerText = "🟢 Sistema Activo y Escuchando Tickets...";
             document.getElementById('btnActivar').style.display = 'none';
             
-            // Verificar inmediatamente y luego cada 4 segundos
             verificarPendientes();
             setInterval(verificarPendientes, 4000);
         }
@@ -46,7 +42,7 @@
                 
                 if (pendientes && pendientes.length > 0) {
                     for (let lote of pendientes) {
-                        imprimirLoteSilencioso(lote);
+                        imprimirLoteDirecto(lote);
                         await new Promise(r => setTimeout(r, 4000));
                     }
                 }
@@ -55,9 +51,10 @@
             }
         }
 
-        function imprimirLoteSilencioso(lote) {
-            let iframe = document.getElementById('iframeImpresion');
-            let doc = iframe.contentWindow.document;
+        function imprimirLoteDirecto(lote) {
+            // Creamos una ventana emergente ultra pequeña fuera de la vista o minimizada
+            let ventana = window.open('', '_blank', 'width=100,height=100,left=-1000,top=-1000');
+            if (!ventana) return;
 
             let htmlTicket = `
                 <!DOCTYPE html>
@@ -94,16 +91,18 @@
                         window.onload = function() {
                             setTimeout(() => {
                                 window.print();
-                            }, 300);
+                            }, 200);
+                        };
+                        window.onafterprint = function() {
+                            window.close();
                         };
                     <\/script>
                 </body>
                 </html>
             `;
 
-            doc.open();
-            doc.write(htmlTicket);
-            doc.close();
+            ventana.document.write(htmlTicket);
+            ventana.document.close();
 
             // Marcar como impreso en el servidor
             fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });

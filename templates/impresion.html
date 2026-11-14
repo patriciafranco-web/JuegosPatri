@@ -87,10 +87,8 @@
                         window.onload = function() {
                             setTimeout(() => {
                                 window.print();
+                                setTimeout(() => { window.close(); }, 800);
                             }, 400);
-                        };
-                        window.onafterprint = function() {
-                            window.close();
                         };
                     <\/script>
                 </body>

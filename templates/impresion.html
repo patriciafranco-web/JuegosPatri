@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Módulo de Impresión - Juegos Patri</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6 font-sans">
+    <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-lg w-full text-center space-y-6">
+        <h1 class="text-2xl font-black text-amber-400">🖨️ Módulo de Impresión</h1>
+        <p class="text-sm text-slate-300">Mantén esta pestaña abierta en la computadora conectada a tu impresora térmica FTX TDR058U.</p>
+        
+        <div id="estadoConexion" class="bg-slate-900 p-4 rounded-xl border border-slate-700 text-xs font-mono text-amber-400">
+            ⏳ Esperando activación del sistema...
+        </div>
+
+        <button onclick="activarImpresion()" id="btnActivar" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg text-sm">
+            🚀 Activar Sistema Ahora
+        </button>
+    </div>
+
+    <script>
+        let sistemaActivo = false;
+
+        function activarImpresion() {
+            sistemaActivo = true;
+            document.getElementById('estadoConexion').className = "bg-slate-900 p-4 rounded-xl border border-emerald-500 text-xs font-mono text-emerald-400";
+            document.getElementById('estadoConexion').innerText = "🟢 Sistema Activo y Escuchando Tickets...";
+            document.getElementById('btnActivar').classList.add('hidden');
+            setInterval(verificarPendientes, 4000);
+        }
+
+        async function verificarPendientes() {
+            if (!sistemaActivo) return;
+            try {
+                const res = await fetch('/api/pendientes-impresion');
+                const pendientes = await res.json();
+                
+                if (pendientes && pendientes.length > 0) {
+                    for (let lote of pendientes) {
+                        imprimirLote(lote);
+                        await new Promise(r => setTimeout(r, 2000)); // Pausa entre impresiones
+                    }
+                }
+            } catch (e) {
+                console.error("Error consultando pendientes:", e);
+            }
+        }
+
+        async function imprimirLote(lote) {
+            // Ventana de impresión limpia simulando el ticket de 58mm
+            let ventana = window.open('', '_blank', 'width=320,height=600');
+            if (!ventana) return;
+
+            let htmlTicket = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Ticket #${lote.id}</title>
+                    <style>
+                        body { width: 58mm; margin: 0; padding: 5px; font-family: monospace; text-align: center; background: white; color: black; }
+                        h2 { margin: 5px 0; font-size: 16px; font-weight: bold; }
+                        p { margin: 3px 0; font-size: 11px; }
+                        .linea { border-bottom: 1px dashed black; margin: 8px 0; }
+                        .numeros { font-size: 14px; font-weight: bold; margin: 10px 0; word-break: break-all; }
+                        .qr { margin-top: 10px; }
+                    </style>
+                </head>
+                <body>
+                    <h2>JUEGOS PATRI</h2>
+                    <p>${lote.sorteo_titulo}</p>
+                    <div class="linea"></div>
+                    <p style="text-align:left;"><b>CLIENTE:</b> ${lote.nombre.toUpperCase()}</p>
+                    <p style="text-align:left;"><b>CI:</b> ${lote.cedula} | <b>TEL:</b> ${lote.telefono}</p>
+                    <div class="linea"></div>
+                    <p><b>NUMEROS ASIGNADOS:</b></p>
+                    <div class="numeros">${lote.numeros_asignados.map(n => '#' + n).join(', ')}</div>
+                    <div class="linea"></div>
+                    <p>¡Participas en los Juegos Locos!</p>
+                    <div class="qr">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}" width="110">
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            setTimeout(() => window.close(), 1000);
+                        }
+                    <\/script>
+                </body>
+                </html>
+            `;
+
+            ventana.document.write(htmlTicket);
+            ventana.document.close();
+
+            // Marcar como impreso en el servidor
+            await fetch(`/api/marcar-impreso/${lote.id}`, { method: 'POST' });
+        }
+    </script>
+</body>
+</html>

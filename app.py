@@ -581,10 +581,19 @@ def webhook_whatsapp():
                         max_tokens=250,
                         messages=[{"role": "user", "content": prompt_asistente}]
                     )
-                    respuesta_claude = message.content[0].text.strip()
-                    enviar_mensaje_whatsapp(telefono, respuesta_claude, id_inst, token_inst)
+                    
+                    # Extracción segura compatible con bloques de texto de Anthropic
+                    respuesta_claude = ""
+                    for content_block in message.content:
+                        if hasattr(content_block, 'text'):
+                            respuesta_claude += content_block.text
+
+                    if not respuesta_claude:
+                        respuesta_claude = "Por favor, selecciona una opción válida del menú o escribe 'Hola' para ver los combos."
+
+                    enviar_mensaje_whatsapp(telefono, respuesta_claude.strip(), id_inst, token_inst)
                 except Exception as e:
-                    print(f"Error Claude abierto: {e}")
+                    print(f"❌ Error Claude abierto: {e}")
                     enviar_mensaje_whatsapp(telefono, "Por favor, selecciona una opción válida del menú o escribe 'Hola' para ver los combos.", id_inst, token_inst)
             else:
                 enviar_mensaje_whatsapp(telefono, "Por favor, responde con el número de la opción deseada o escribe 'Hola' para ver el menú principal.", id_inst, token_inst)

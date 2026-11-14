@@ -61,11 +61,12 @@
                     <style>
                         @page { size: 58mm auto; margin: 0; }
                         body { width: 48mm; margin: 0 auto; padding: 2px; font-family: monospace; text-align: center; background: white; color: black; }
-                        h2 { margin: 2px 0; font-size: 14px; font-weight: bold; }
-                        p { margin: 2px 0; font-size: 9px; line-height: 1.2; word-break: break-word; }
+                        h2 { margin: 2px 0; font-size: 13px; font-weight: bold; }
+                        p { margin: 2px 0; font-size: 9px; line-height: 1.1; word-break: break-word; }
                         .linea { border-bottom: 1px dashed black; margin: 4px 0; }
-                        .numeros { font-size: 12px; font-weight: bold; margin: 6px 0; word-break: break-all; }
-                        .qr { margin-top: 4px; }
+                        .numeros { font-size: 11px; font-weight: bold; margin: 5px 0; word-break: break-all; }
+                        .qr { margin-top: 4px; text-align: center; }
+                        .qr img { width: 75px; height: 75px; display: block; margin: 0 auto; }
                     </style>
                 </head>
                 <body>
@@ -80,13 +81,13 @@
                     <div class="linea"></div>
                     <p>¡Participas en los Juegos Locos!</p>
                     <div class="qr">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}" width="85">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://juegospatri.onrender.com/validar/${lote.numeros_asignados[0]}">
                     </div>
                     <script>
                         window.onload = function() {
                             setTimeout(() => {
                                 window.print();
-                            }, 500);
+                            }, 400);
                         };
                         window.onafterprint = function() {
                             window.close();

@@ -11,7 +11,6 @@ import shutil
 
 app = Flask(__name__)
 
-# Permiso para leer credenciales desde Variables de Entorno de Render o directo de aquí:
 ID_INSTANCE = os.environ.get("ID_INSTANCE", "710722800257").strip()
 API_TOKEN_INSTANCE = os.environ.get("API_TOKEN_INSTANCE", "5c2bc8276faf4842a7aa71d55b5d569f8a3d841ec9f24301aa").strip()
 API_URL = "https://7107.api.greenapi.com"
@@ -226,6 +225,54 @@ def index():
 @app.route("/admin")
 def admin_panel():
     return render_template("admin.html")
+
+@app.route("/ruleta")
+def vista_ruleta():
+    conn = get_db()
+    boletos_aprobados = conn.execute("SELECT id, nombre FROM boletos WHERE estado = 'Aprobado' ORDER BY id ASC").fetchall()
+    conn.close()
+    participantes = [{"id": b["id"], "nombre": b["nombre"]} for b in boletos_aprobados]
+    return render_template("ruleta.html", participantes=json.dumps(participantes))
+
+@app.route("/api/top-compradores", methods=["GET"])
+def obtener_top_compradores():
+    conn = get_db()
+    query = """
+        SELECT nombre, cedula, telefono, COUNT(id) as total_boletos 
+        FROM boletos 
+        WHERE estado = 'Aprobado' 
+        GROUP BY telefono 
+        ORDER BY total_boletos DESC 
+        LIMIT 5
+    """
+    top = conn.execute(query).fetchall()
+    conn.close()
+    return jsonify([dict(t) for t in top]), 200
+
+@app.route("/api/admin/difusion-masiva", methods=["POST"])
+def admin_difusion_masiva():
+    data = request.json or {}
+    if not verificar_admin(data): return jsonify({"error": "No autorizado"}), 401
+    
+    mensaje_difusion = data.get("mensaje", "").strip()
+    if not mensaje_difusion:
+        return jsonify({"error": "El mensaje no puede estar vacío"}), 400
+        
+    conn = get_db()
+    clientes = conn.execute("SELECT telefono FROM clientes").fetchall()
+    conn.close()
+    
+    enviados = 0
+    for c in clientes:
+        tel = c["telefono"]
+        try:
+            enviar_mensaje_whatsapp(tel, f"📢 *AVISO OFICIAL - JUEGOS PATRI*\n\n{mensaje_difusion}")
+            enviados += 1
+            time.sleep(0.4)
+        except Exception as e:
+            print(f"Error enviando a {tel}: {e}")
+            
+    return jsonify({"mensaje": f"¡Difusión enviada con éxito a {enviados} clientes!"}), 200
 
 @app.route("/api/sorteos", methods=["GET"])
 def obtener_sorteos():

@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Módulo de Impresión Térmica - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Reglas estrictas para la impresora térmica 58mm */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #areaImpresion, #areaImpresion * {
+                visibility: visible;
+            }
+            #areaImpresion {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            @page {
+                size: 58mm auto;
+                margin: 0;
+            }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6">
     <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 max-w-md w-full text-center space-y-6">
@@ -21,8 +44,8 @@
         </div>
     </div>
 
-    <!-- ZONA DE TICKET OCULTA PARA IMPRESIÓN TÉRMICA -->
-    <div id="areaImpresion" class="hidden"></div>
+    <!-- ZONA DE TICKET EXCLUSIVA PARA LA IMPRESORA TÉRMICA -->
+    <div id="areaImpresion"></div>
 
     <script>
         async function verificarPendientes() {
@@ -34,8 +57,6 @@
                 const colaDiv = document.getElementById('colaImpresion');
                 if (boletos.length > 0) {
                     colaDiv.innerHTML = `Imprimiendo ${boletos.length} boleto(s) pendiente(s)...`;
-                    
-                    // Tomamos el primer boleto de la cola
                     const b = boletos[0];
                     await imprimirBoletoIndividual(b);
                 } else {
@@ -49,30 +70,29 @@
         async function imprimirBoletoIndividual(b) {
             const area = document.getElementById('areaImpresion');
             
-            // Generamos el diseño compacto optimizado para impresora térmica de 58mm (FTX TDR058U)
+            // Estructura limpia con los márgenes y proporciones correctas para papel térmico
             area.innerHTML = `
-                <div style="width: 380px; font-family: monospace; background: white; color: black; padding: 15px; text-align: center; font-size: 14px;">
-                    <h2 style="margin: 0; font-size: 18px; font-weight: bold;">JUEGOS PATRI</h2>
-                    <p style="margin: 5px 0; font-size: 12px;">--------------------------------</p>
-                    <p style="margin: 3px 0; text-align: left;"><strong>CLIENTE:</strong> ${b.nombre.toUpperCase()}</p>
-                    <p style="margin: 3px 0; text-align: left;"><strong>CI:</strong> ${b.cedula} | <strong>TEL:</strong> ${b.telefono}</p>
-                    <p style="margin: 3px 0; text-align: left;"><strong>EDICION:</strong> ${b.sorteo_titulo}</p>
-                    <p style="margin: 5px 0; font-size: 12px;">--------------------------------</p>
-                    <h1 style="margin: 10px 0; font-size: 26px; font-weight: bold;">NRO: #${b.numero_asignado}</h1>
-                    <p style="margin: 5px 0; font-size: 12px;">--------------------------------</p>
-                    <div style="margin: 10px 0;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${window.location.origin}/validar/${b.id}" width="130" height="130" />
+                <div style="width: 100%; font-family: 'Courier New', monospace; background: white; color: black; padding: 10px 5px; text-align: center; font-size: 13px;">
+                    <h2 style="margin: 0; font-size: 16px; font-weight: bold;">JUEGOS PATRI</h2>
+                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
+                    <p style="margin: 2px 0; text-align: left;"><strong>CLIENTE:</strong> ${b.nombre.toUpperCase()}</p>
+                    <p style="margin: 2px 0; text-align: left;"><strong>CI:</strong> ${b.cedula} | <strong>TEL:</strong> ${b.telefono}</p>
+                    <p style="margin: 2px 0; text-align: left;"><strong>EDICION:</strong> ${b.sorteo_titulo}</p>
+                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
+                    <h1 style="margin: 8px 0; font-size: 24px; font-weight: bold;">NRO: #${b.numero_asignado}</h1>
+                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
+                    <div style="margin: 8px 0;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${window.location.origin}/validar/${b.id}" width="120" height="120" />
                     </div>
-                    <p style="margin: 5px 0; font-size: 10px;">Escanea para validar oficial</p>
+                    <p style="margin: 3px 0; font-size: 10px;">Escanea para validar oficial</p>
                 </div>
             `;
-            area.classList.remove('hidden');
             
-            // Imprimimos de forma automática
+            // Envía la orden directa a la impresora
             window.print();
-            area.classList.add('hidden');
-
-            // Marcamos el boleto como impreso en el servidor para que no se vuelva a repetir
+            
+            // Limpia el contenedor y marca como impreso
+            area.innerHTML = '';
             try {
                 await fetch(`/api/marcar-impreso/${b.id}`, { method: 'POST' });
             } catch (e) {
@@ -80,7 +100,6 @@
             }
         }
 
-        // Intervalo de sondeo cada 4 segundos
         setInterval(verificarPendientes, 4000);
         verificarPendientes();
     </script>

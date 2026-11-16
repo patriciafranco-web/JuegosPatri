@@ -6,7 +6,6 @@
     <title>Módulo de Impresión Térmica - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Reglas estrictas para la impresora térmica 58mm */
         @media print {
             body * {
                 visibility: hidden;
@@ -44,7 +43,7 @@
         </div>
     </div>
 
-    <!-- ZONA DE TICKET EXCLUSIVA PARA LA IMPRESORA TÉRMICA -->
+    <!-- ZONA DE TICKET FORMATO IMAGEN 2 -->
     <div id="areaImpresion"></div>
 
     <script>
@@ -70,28 +69,26 @@
         async function imprimirBoletoIndividual(b) {
             const area = document.getElementById('areaImpresion');
             
-            // Estructura limpia con los márgenes y proporciones correctas para papel térmico
+            // Estructura exacta idéntica a la Imagen 2
             area.innerHTML = `
-                <div style="width: 100%; font-family: 'Courier New', monospace; background: white; color: black; padding: 10px 5px; text-align: center; font-size: 13px;">
-                    <h2 style="margin: 0; font-size: 16px; font-weight: bold;">JUEGOS PATRI</h2>
-                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
-                    <p style="margin: 2px 0; text-align: left;"><strong>CLIENTE:</strong> ${b.nombre.toUpperCase()}</p>
-                    <p style="margin: 2px 0; text-align: left;"><strong>CI:</strong> ${b.cedula} | <strong>TEL:</strong> ${b.telefono}</p>
-                    <p style="margin: 2px 0; text-align: left;"><strong>EDICION:</strong> ${b.sorteo_titulo}</p>
-                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
-                    <h1 style="margin: 8px 0; font-size: 24px; font-weight: bold;">NRO: #${b.numero_asignado}</h1>
-                    <p style="margin: 3px 0; font-size: 11px;">--------------------------------</p>
-                    <div style="margin: 8px 0;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${window.location.origin}/validar/${b.id}" width="120" height="120" />
+                <div style="width: 100%; font-family: 'Courier New', monospace; background: white; color: black; padding: 4px 2px; text-align: center; font-size: 12px; line-height: 1.2;">
+                    <div style="font-weight: bold; font-size: 14px;">JUEGOS PATRI</div>
+                    <div style="font-size: 11px; margin: 2px 0; padding: 0 5px;">${b.sorteo_titulo}</div>
+                    <div style="text-align: left; margin-top: 4px;"><strong>CLIENTE:</strong> ${b.nombre.toUpperCase()}</div>
+                    <div style="text-align: left;"><strong>CI:</strong> ${b.cedula} | <strong>TEL:</strong> ${b.telefono}</div>
+                    <div style="margin: 3px 0; font-size: 11px;">--------------------------------</div>
+                    <div style="font-size: 11px; font-weight: bold;">NUMEROS ASIGNADOS:</div>
+                    <div style="font-size: 20px; font-weight: bold; margin: 4px 0;">#${b.numero_asignado}</div>
+                    <div style="margin: 3px 0; font-size: 11px;">--------------------------------</div>
+                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 4px;">¡Participas en los Juegos Locos!</div>
+                    <div style="margin: 2px 0;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${window.location.origin}/validar/${b.id}" width="110" height="110" />
                     </div>
-                    <p style="margin: 3px 0; font-size: 10px;">Escanea para validar oficial</p>
                 </div>
             `;
             
-            // Envía la orden directa a la impresora
             window.print();
             
-            // Limpia el contenedor y marca como impreso
             area.innerHTML = '';
             try {
                 await fetch(`/api/marcar-impreso/${b.id}`, { method: 'POST' });

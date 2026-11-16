@@ -876,7 +876,6 @@ def admin_eliminar_lote(lote_id):
 @app.route("/api/pendientes-impresion", methods=["GET"])
 def obtener_pendientes_impresion():
     conn = get_db()
-    # Devolvemos cada boleto individual que esté aprobado y pendiente de impresión
     boletos_aprobados = conn.execute("SELECT * FROM boletos WHERE estado = 'Aprobado' AND impreso = 0 ORDER BY id ASC").fetchall()
     
     pendientes = []

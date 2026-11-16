@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Módulo de Impresión Térmica - Juegos Patri</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Librería oficial para generar códigos QR locales sin depender de internet -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         @media print {
             body * {
@@ -43,7 +45,7 @@
         </div>
     </div>
 
-    <!-- ZONA DE TICKET FORMATO IMAGEN 2 -->
+    <!-- ZONA DE TICKET -->
     <div id="areaImpresion"></div>
 
     <script>
@@ -69,7 +71,7 @@
         async function imprimirBoletoIndividual(b) {
             const area = document.getElementById('areaImpresion');
             
-            // Estructura exacta idéntica a la Imagen 2
+            // Estructura limpia dejando un contenedor vacío para el QR local
             area.innerHTML = `
                 <div style="width: 100%; font-family: 'Courier New', monospace; background: white; color: black; padding: 4px 2px; text-align: center; font-size: 12px; line-height: 1.2;">
                     <div style="font-weight: bold; font-size: 14px;">JUEGOS PATRI</div>
@@ -81,11 +83,23 @@
                     <div style="font-size: 20px; font-weight: bold; margin: 4px 0;">#${b.numero_asignado}</div>
                     <div style="margin: 3px 0; font-size: 11px;">--------------------------------</div>
                     <div style="font-size: 11px; font-weight: bold; margin-bottom: 4px;">¡Participas en los Juegos Locos!</div>
-                    <div style="margin: 2px 0;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${window.location.origin}/validar/${b.id}" width="110" height="110" />
-                    </div>
+                    <div id="qrContenedor" style="display: inline-block; margin: 2px 0;"></div>
                 </div>
             `;
+            
+            // Generamos el código QR de manera local de forma inmediata
+            const urlValidacion = `${window.location.origin}/validar/${b.id}`;
+            new QRCode(document.getElementById("qrContenedor"), {
+                text: urlValidacion,
+                width: 110,
+                height: 110,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.M
+            });
+
+            // Damos un pequeño respiro de 300ms para asegurar que el navegador renderice el QR local antes de llamar a print()
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             window.print();
             

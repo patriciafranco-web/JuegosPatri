@@ -848,6 +848,66 @@ def admin_aprobar_lote(lote_id):
 
     return jsonify({"mensaje": f"¡Lote aprobado con éxito ({len(boletos_lote)} boletos)!"}), 200
 
+# RUTA DE CARGA MANUAL SILENCIOSA (Sin WhatsApp, directo a cola de impresión)
+@app.route("/api/admin/cargar-manual-silencioso", methods=["POST"])
+def admin_cargar_manual_silencioso():
+    data = request.json or {}
+    if not verificar_admin(data): return jsonify({"error": "No autorizado"}), 401
+    
+    sorteo_id = int(data.get("sorteo_id", 1))
+    nombre = data.get("nombre")
+    telefono = data.get("telefono", "0000000000")
+    cedula = data.get("cedula", "0000000")
+    cantidad = int(data.get("cantidad", 1))
+    inicio_personalizado = data.get("inicio_personalizado")
+
+    if not nombre or cantidad < 1:
+        return jsonify({"error": "El nombre y la cantidad son obligatorios."}), 400
+
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
+        current_lote = int(lote_row["valor"]) if lote_row else 1
+        cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
+
+        nuevos_boletos_ids = []
+        if inicio_personalizado is not None and str(inicio_personalizado).strip() != "":
+            num_actual = int(inicio_personalizado)
+            for _ in range(cantidad):
+                nuevos_boletos_ids.append(num_actual)
+                num_actual += 1
+        else:
+            for _ in range(cantidad):
+                liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
+                if liberado:
+                    num_boleto = liberado["numero"]
+                    cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
+                else:
+                    cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
+                    num_boleto = int(cont_row["valor"]) if cont_row else 1
+                    cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
+                nuevos_boletos_ids.append(num_boleto)
+
+        max_num = max(nuevos_boletos_ids)
+        cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
+        actual_cont = int(cont_row["valor"]) if cont_row else 1
+        if max_num >= actual_cont:
+            cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(max_num + 1)))
+
+        for num_boleto in nuevos_boletos_ids:
+            cursor.execute('''
+                INSERT OR REPLACE INTO boletos (id, sorteo_id, lote_id, nombre, telefono, cedula, cantidad_lote, imagen_comprobante, metodo_pago, detalle_pago, estado, impreso, es_juego_loco, vendedor)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Carga Manual', 'Manual (Silencioso)', 'Carga interna', 'Aprobado', 0, 0, 'Carga Manual')
+            ''', (num_boleto, sorteo_id, current_lote, nombre, telefono, cedula, cantidad))
+
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"mensaje": f"¡{cantidad} boletos agregados (del #{nuevos_boletos_ids[0]} al #{nuevos_boletos_ids[-1]}) y listos para imprimir!"}), 200
+
 @app.route("/api/admin/eliminar-lote/<int:lote_id>", methods=["POST"])
 def admin_eliminar_lote(lote_id):
     data = request.json or {}

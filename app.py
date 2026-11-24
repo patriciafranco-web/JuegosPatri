@@ -1490,6 +1490,77 @@ def jp_clientes_api():
     return jsonify({"ok": True, "id": cid})
 
 
+@app.route("/api/jp/importar-clientes", methods=["POST"])
+@jp_login_required
+def jp_importar_clientes():
+    if session.get("jp_role") != "admin":
+        return jsonify({"error": "Solo administrador"}), 403
+
+    items = request.json or []
+    if not isinstance(items, list):
+        return jsonify({"error": "Formato inválido"}), 400
+
+    importados = 0
+    omitidos = 0
+
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        for item in items:
+            mesa_num = str(item.get("mesa_num") or "").strip()
+            senor = str(item.get("senor") or "").strip()
+            if not mesa_num or not senor:
+                omitidos += 1
+                continue
+
+            existe = cursor.execute(
+                "SELECT id FROM jp_clientes WHERE activo = 1 AND mesa_num = ? AND LOWER(senor) = LOWER(?)",
+                (mesa_num, senor)
+            ).fetchone()
+            if existe:
+                omitidos += 1
+                continue
+
+            cursor.execute(
+                """INSERT INTO jp_clientes (mesa_num, senor, ciudad, calle, lugar, ci, tarifa, maps_url, lat, lng, notas)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mesa_num,
+                    senor,
+                    str(item.get("ciudad") or "").strip(),
+                    str(item.get("calle") or "").strip(),
+                    str(item.get("lugar") or "").strip(),
+                    str(item.get("ci") or "").strip(),
+                    int(item.get("tarifa") or 1000),
+                    str(item.get("maps_url") or "").strip(),
+                    item.get("lat"),
+                    item.get("lng"),
+                    str(item.get("notas") or "").strip(),
+                )
+            )
+            cid = cursor.lastrowid
+
+            reloj_ini = int(item.get("ultimo_reloj") or 0)
+            saldo_ini = int(item.get("saldo_actual") or 0)
+            fecha_ini = str(item.get("ultima_fecha") or time.strftime("%Y-%m-%d"))
+
+            if reloj_ini > 0 or saldo_ini != 0:
+                cursor.execute(
+                    """INSERT INTO jp_lecturas (cliente_id, fecha, reloj, cant_jug, total_gs, entrega, saldo_resultante, observacion)
+                       VALUES (?, ?, ?, 0, 0, 0, ?, 'Migración inicial desde local')""",
+                    (cid, fecha_ini, reloj_ini, saldo_ini)
+                )
+
+            importados += 1
+
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"ok": True, "importados": importados, "omitidos": omitidos})
+
+
 @app.route("/api/jp/cobrador/cargar", methods=["POST"])
 @jp_login_required
 def jp_cobrador_cargar():

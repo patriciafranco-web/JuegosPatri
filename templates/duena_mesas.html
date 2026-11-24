@@ -293,6 +293,9 @@
         <a id="fc-link-gps" href="#" target="_blank" class="hidden bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl">
           📍 Ver en Google Maps
         </a>
+        <button type="button" onclick="borrarMesaDesdeFicha()" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-3 py-2 rounded-xl">
+          🗑️ Dar de baja
+        </button>
       </div>
 
       <div>
@@ -522,7 +525,7 @@
               <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
                 <button type="button" onclick="abrirFicha(${c.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded font-bold">Ficha / Fotos</button>
                 <button type="button" onclick="abrirModalMesa(${c.id})" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded font-bold">Editar</button>
-                <button type="button" onclick="borrarMesaDuena(${c.id}, '${c.mesa_num}')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2 py-1 rounded font-bold">✕</button>
+                <button type="button" onclick="borrarMesaDuena(${c.id}, '${c.mesa_num}', '${String(c.senor || '').replace(/'/g, '')}')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2.5 py-1 rounded font-bold">Dar de baja</button>
               </td>
             </tr>
           `).join('')
@@ -728,6 +731,7 @@
 
     function cerrarFicha() {
       document.getElementById('modal-ficha').classList.add('hidden');
+      mesaActiva = null;
     }
 
     function pedirUbicacionWa() {
@@ -798,10 +802,25 @@
       cargarDuena();
     }
 
-    async function borrarMesaDuena(id, num) {
-      if (!confirm(`¿Desactivar la Mesa ${num}?`)) return;
-      const res = await fetch(`/api/jp/clientes/${id}`, { method: 'DELETE' });
-      if (res.ok) cargarDuena();
+    async function borrarMesaDuena(id, num, senor = '') {
+      const etiqueta = senor ? `Mesa ${num} (${senor})` : `Mesa ${num}`;
+      if (!confirm(`¿Dar de baja / eliminar ${etiqueta}? Saldrá de la lista activa del cobrador.`)) return;
+      const res = await fetch(`/api/jp/clientes/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo: 'Mesa entregada / baja desde Modo Dueña' })
+      });
+      if (res.ok) {
+        cerrarFicha();
+        cargarDuena();
+      } else {
+        alert('No se pudo dar de baja la mesa.');
+      }
+    }
+
+    function borrarMesaDesdeFicha() {
+      if (!mesaActiva) return;
+      borrarMesaDuena(mesaActiva.id, mesaActiva.mesa_num, mesaActiva.senor);
     }
 
     function calcularProyeccion() {

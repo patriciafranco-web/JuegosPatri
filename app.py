@@ -1573,6 +1573,27 @@ def jp_cliente_lecturas_api(cid):
     return jsonify({"lecturas": rows})
 
 
+@app.route("/api/jp/clientes/<int:cid>/fotos", methods=["GET"])
+@jp_login_required
+def jp_cliente_fotos_api(cid):
+    conn = get_db()
+    rows = [
+        dict(r) for r in conn.execute(
+            "SELECT id, cliente_id, tipo, archivo, fecha, observacion FROM jp_fotos_cliente WHERE cliente_id = ? ORDER BY id DESC",
+            (cid,)
+        ).fetchall()
+    ]
+    conn.close()
+    fotos = [
+        {
+            **r,
+            "url": url_for("jp_servir_foto", filename=r["archivo"])
+        }
+        for r in rows
+    ]
+    return jsonify({"fotos": fotos})
+
+
 @app.route("/api/jp/importar-clientes", methods=["POST"])
 @jp_admin_required
 def jp_importar_clientes():

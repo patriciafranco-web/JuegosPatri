@@ -259,6 +259,19 @@ def jp_login_required(f):
     return decorated
 
 
+def jp_admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("jp_logged_in"):
+            if request.path.startswith("/api/jp/"):
+                return jsonify({"error": "No autorizado"}), 401
+            return redirect(url_for("jp_login", next=request.full_path))
+        if session.get("jp_role") != "admin":
+            return redirect(url_for("vista_cobrador"))
+        return f(*args, **kwargs)
+    return decorated
+
+
 def _jp_buscar_coords(texto):
     if not texto:
         return None, None
@@ -415,13 +428,13 @@ DOBLE_ACCESO_HTML = """
       <a href="/" class="block w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 px-4 rounded-xl shadow">
         🎟️ Módulo de Sorteo
       </a>
+      <a href="/cobrador/duena" class="block w-full bg-slate-900 hover:bg-slate-800 text-amber-400 font-black py-3.5 px-4 rounded-xl shadow">
+        👑 Modo Dueña (Mesas y Rutas)
+      </a>
       <a href="/cobrador" class="block w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 px-4 rounded-xl shadow">
-        🎱 Modo Cobrador / Mesas
+        🎱 Modo Cobrador
       </a>
-      <a href="/cobrador/panel" class="block w-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold py-2.5 px-4 rounded-xl text-xs">
-        📊 Panel de Mesas y Cobro
-      </a>
-      <a href="/cobrador/qr-etiquetas" class="block w-full bg-slate-800 hover:bg-slate-700 text-white font-extrabold py-2.5 px-4 rounded-xl text-xs">
+      <a href="/cobrador/qr-etiquetas" class="block w-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold py-2.5 px-4 rounded-xl text-xs">
         🖨️ Imprimir Etiquetas QR por Mesa
       </a>
     </div>
@@ -436,15 +449,15 @@ JP_LOGIN_HTML = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Acceso Cobrador — Juegos Patri</title>
+  <title>Acceso — Juegos Patri</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-5">
     <div class="text-center">
       <div class="inline-block bg-emerald-600 text-white font-black px-3 py-1.5 rounded-xl text-lg mb-2">JP</div>
-      <h1 class="text-xl font-black text-slate-900">COBRADOR — JUEGOS PATRI</h1>
-      <p class="text-xs text-slate-500">Ingreso para control de mesas y relojes</p>
+      <h1 class="text-xl font-black text-slate-900">ACCESO MESAS — JUEGOS PATRI</h1>
+      <p class="text-xs text-slate-500">Ingreso para Dueña / Admin y Cobrador</p>
     </div>
     {% if error %}
       <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold p-2.5 rounded-lg text-center">{{ error }}</div>
@@ -452,14 +465,14 @@ JP_LOGIN_HTML = """
     <form method="POST" class="space-y-3 text-sm">
       <div>
         <label class="block text-xs font-bold text-slate-700 mb-1">Usuario</label>
-        <input name="username" required autofocus class="w-full px-3 py-2.5 border border-slate-300 rounded-lg" placeholder="cobrador o usuario admin" />
+        <input name="username" required autofocus class="w-full px-3 py-2.5 border border-slate-300 rounded-lg" placeholder="patriciafranco o cobrador" />
       </div>
       <div>
         <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
         <input name="password" type="password" required class="w-full px-3 py-2.5 border border-slate-300 rounded-lg" placeholder="••••••••" />
       </div>
       <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-lg shadow">
-        Ingresar a Cobrador
+        Ingresar
       </button>
     </form>
   </div>
@@ -492,8 +505,11 @@ JP_QR_HTML = """
         <p class="text-xs text-slate-500">Cada QR abre directo la carga de esa mesa en <code>/cobrador?mesa=...</code></p>
       </div>
       <div class="flex items-center gap-2">
+        <a href="/cobrador/duena" class="bg-slate-900 hover:bg-slate-800 text-amber-400 text-xs font-extrabold px-3.5 py-2.5 rounded-xl">
+          👑 Modo Dueña
+        </a>
         <a href="/cobrador" class="bg-slate-200 hover:bg-slate-300 text-slate-900 text-xs font-extrabold px-3.5 py-2.5 rounded-xl">
-          ← Volver a Cobrador
+          ← Cobrador
         </a>
         <button type="button" onclick="window.print()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl shadow">
           🖨️ Imprimir todas las etiquetas
@@ -1353,7 +1369,7 @@ def doble_acceso():
 @app.route("/cobrador/login", methods=["GET", "POST"])
 def jp_login():
     error = None
-    next_url = request.args.get("next") or url_for("vista_cobrador")
+    next_url = request.args.get("next") or ""
     if request.method == "POST":
         u = request.form.get("username", "").strip()
         p = request.form.get("password", "").strip()
@@ -1362,7 +1378,10 @@ def jp_login():
         if es_admin or es_cobrador:
             session["jp_logged_in"] = True
             session["jp_role"] = "admin" if es_admin else "cobrador"
-            return redirect(next_url if next_url.startswith("/") else url_for("vista_cobrador"))
+            destino_defecto = url_for("jp_duena_panel") if es_admin else url_for("vista_cobrador")
+            if next_url.startswith("/") and next_url not in ("/cobrador", "/cobrador/"):
+                return redirect(next_url)
+            return redirect(destino_defecto)
         error = "Usuario o contraseña incorrectos"
     return render_template_string(JP_LOGIN_HTML, error=error)
 
@@ -1380,10 +1399,10 @@ def vista_cobrador():
     return render_template("cobrador.html")
 
 
-@app.route("/cobrador/panel")
-@jp_login_required
-def jp_panel():
-    return render_template("mesas_cobro.html")
+@app.route("/cobrador/duena")
+@jp_admin_required
+def jp_duena_panel():
+    return render_template("duena_mesas.html")
 
 
 @app.route("/cobrador/qr-etiquetas")
@@ -1490,12 +1509,73 @@ def jp_clientes_api():
     return jsonify({"ok": True, "id": cid})
 
 
-@app.route("/api/jp/importar-clientes", methods=["POST"])
-@jp_login_required
-def jp_importar_clientes():
-    if session.get("jp_role") != "admin":
-        return jsonify({"error": "Solo administrador"}), 403
+@app.route("/api/jp/clientes/<int:cid>", methods=["PUT", "DELETE"])
+@jp_admin_required
+def jp_cliente_detalle_api(cid):
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+        cli = cursor.execute("SELECT id FROM jp_clientes WHERE id = ?", (cid,)).fetchone()
+        if not cli:
+            conn.close()
+            return jsonify({"error": "Mesa no encontrada"}), 404
 
+        if request.method == "DELETE":
+            cursor.execute("UPDATE jp_clientes SET activo = 0 WHERE id = ?", (cid,))
+            conn.commit()
+            conn.close()
+            respaldar_base_datos()
+            return jsonify({"ok": True})
+
+        data = request.json or {}
+        maps_url = (data.get("maps_url") or "").strip()
+        lat, lng = jp_extraer_coords_maps(maps_url)
+        cursor.execute(
+            """UPDATE jp_clientes
+               SET mesa_num = ?, senor = ?, ciudad = ?, calle = ?, lugar = ?, ci = ?,
+                   tarifa = ?, maps_url = ?,
+                   lat = COALESCE(?, lat), lng = COALESCE(?, lng), notas = ?
+               WHERE id = ?""",
+            (
+                str(data.get("mesa_num", "")).strip(),
+                str(data.get("senor", "")).strip(),
+                str(data.get("ciudad", "")).strip(),
+                str(data.get("calle", "")).strip(),
+                str(data.get("lugar", "")).strip(),
+                str(data.get("ci", "")).strip(),
+                int(data.get("tarifa", 1000) or 1000),
+                maps_url,
+                lat,
+                lng,
+                str(data.get("notas", "")).strip(),
+                cid,
+            )
+        )
+        jp_recalcular_cadena(conn, cid)
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/jp/clientes/<int:cid>/lecturas", methods=["GET"])
+@jp_login_required
+def jp_cliente_lecturas_api(cid):
+    conn = get_db()
+    rows = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM jp_lecturas WHERE cliente_id = ? ORDER BY id DESC",
+            (cid,)
+        ).fetchall()
+    ]
+    conn.close()
+    return jsonify({"lecturas": rows})
+
+
+@app.route("/api/jp/importar-clientes", methods=["POST"])
+@jp_admin_required
+def jp_importar_clientes():
     items = request.json or []
     if not isinstance(items, list):
         return jsonify({"error": "Formato inválido"}), 400

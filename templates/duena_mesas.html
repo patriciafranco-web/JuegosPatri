@@ -15,7 +15,7 @@
         <span class="bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg text-sm">JP</span>
         <div>
           <h1 class="font-black text-sm leading-tight tracking-wide">MODO DUEÑA — JUEGOS PATRI</h1>
-          <p class="text-[11px] text-slate-400">Control general de parque de mesas, fichas de cobro, rutas, ventas y gastos</p>
+          <p class="text-[11px] text-slate-400">Control general de parque de mesas, fichas de cobro, fotos, rutas y gastos</p>
         </div>
       </div>
 
@@ -87,7 +87,7 @@
     <div class="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-black">
       <button id="btn-tab-mesas" type="button" onclick="cambiarTab('mesas')"
         class="px-4 py-2.5 rounded-xl bg-slate-900 text-white">
-        🎱 Mesas, Fichas y Ubicaciones
+        🎱 Mesas, Fichas, Fotos y Ubicaciones
       </button>
       <button id="btn-tab-finanzas" type="button" onclick="cambiarTab('finanzas')"
         class="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200">
@@ -193,7 +193,7 @@
 
   </main>
 
-  <!-- MODAL FICHA DE COBRO Y LECTURAS DE LA MESA -->
+  <!-- MODAL FICHA DE COBRO, LECTURAS Y FOTOS DE LA MESA -->
   <div id="modal-ficha" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
     <div class="bg-white rounded-2xl max-w-3xl w-full p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-start border-b pb-3 gap-2">
@@ -250,6 +250,11 @@
             <tbody id="fc-tabla-hist" class="divide-y divide-slate-100"></tbody>
           </table>
         </div>
+      </div>
+
+      <div>
+        <h4 class="text-xs font-black text-slate-700 uppercase mb-2">📷 Fotos Subidas por el Cobrador</h4>
+        <div id="fc-galeria-fotos" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
       </div>
     </div>
   </div>
@@ -438,9 +443,9 @@
                   : `<span class="text-slate-400">Sin GPS</span>`}
               </td>
               <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
-                <button type="button" onclick="abrirFicha(${c.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded font-bold">Ficha</button>
+                <button type="button" onclick="abrirFicha(${c.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded font-bold">Ficha / Fotos</button>
                 <button type="button" onclick="abrirModalMesa(${c.id})" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded font-bold">Editar</button>
-                <button type="button" onclick="borrarMesaDuena(${c.id}, '${c.mesa_num}')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2.5 py-1 rounded font-bold">✕</button>
+                <button type="button" onclick="borrarMesaDuena(${c.id}, '${c.mesa_num}')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2 py-1 rounded font-bold">✕</button>
               </td>
             </tr>
           `).join('')
@@ -468,6 +473,8 @@
       }
 
       document.getElementById('fc-tabla-hist').innerHTML = '<tr><td colspan="7" class="py-3 text-center text-slate-400">Cargando...</td></tr>';
+      const gal = document.getElementById('fc-galeria-fotos');
+      gal.innerHTML = '<div class="col-span-full text-xs text-slate-400 py-2">Cargando fotos...</div>';
       document.getElementById('modal-ficha').classList.remove('hidden');
 
       const res = await fetch(`/api/jp/clientes/${id}/lecturas`);
@@ -486,6 +493,24 @@
             </tr>
           `).join('')
         : '<tr><td colspan="7" class="py-3 text-center text-slate-400">Sin lecturas registradas.</td></tr>';
+
+      const resFotos = await fetch(`/api/jp/clientes/${id}/fotos`);
+      const dataFotos = resFotos.ok ? await resFotos.json() : { fotos: [] };
+      const listaFotos = dataFotos.fotos || [];
+
+      gal.innerHTML = listaFotos.length
+        ? listaFotos.map(f => `
+            <div class="border rounded-xl overflow-hidden bg-slate-50 shadow-sm">
+              <a href="${f.url}" target="_blank">
+                <img src="${f.url}" alt="${f.observacion || 'Foto reloj'}" class="w-full h-36 object-cover bg-slate-200" />
+              </a>
+              <div class="p-2 text-[11px]">
+                <div class="font-bold text-slate-800">${f.fecha || ''}</div>
+                <div class="text-slate-500 truncate">${f.observacion || f.tipo || ''}</div>
+              </div>
+            </div>
+          `).join('')
+        : '<div class="col-span-full text-xs text-slate-400 bg-slate-50 border rounded-xl p-3 text-center">No hay fotos subidas para esta mesa todavía.</div>';
     }
 
     function cerrarFicha() {

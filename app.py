@@ -1521,7 +1521,15 @@ def jp_cliente_detalle_api(cid):
             return jsonify({"error": "Mesa no encontrada"}), 404
 
         if request.method == "DELETE":
-            cursor.execute("UPDATE jp_clientes SET activo = 0 WHERE id = ?", (cid,))
+            data = request.json or {}
+            motivo = str(data.get("motivo") or "Mesa entregada / baja").strip()
+            cursor.execute(
+                """UPDATE jp_clientes
+                   SET activo = 0,
+                       notas = CASE WHEN notas = '' THEN ? ELSE notas || ' | ' || ? END
+                   WHERE id = ?""",
+                (motivo, motivo, cid),
+            )
             conn.commit()
             conn.close()
             respaldar_base_datos()

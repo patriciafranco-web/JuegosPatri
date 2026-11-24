@@ -993,5 +993,560 @@ def limpiar_pruebas():
 def vista_impresion_web():
     return render_template("impresion.html")
 
+import re
+import uuid
+from functools import wraps
+from flask import session, redirect, url_for, render_template_string, send_from_directory, Response
+import csv
+
+app.secret_key = os.environ.get("SECRET_KEY", "juegos-patri-clave-secreta-2026")
+
+COBRADOR_USER = os.environ.get("COBRADOR_USER", "cobrador")
+COBRADOR_PASS = os.environ.get("COBRADOR_PASS", "cobro2026")
+JP_UPLOAD_DIR = os.path.join(CARPETA_DATOS, "uploads_jp")
+os.makedirs(JP_UPLOAD_DIR, exist_ok=True)
+
+
+def jp_login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("jp_logged_in"):
+            if request.path.startswith("/api/jp/"):
+                return jsonify({"error": "No autorizado"}), 401
+            return redirect(url_for("jp_login", next=request.full_path))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _jp_buscar_coords(texto):
+    if not texto:
+        return None, None
+    texto = urllib.parse.unquote(texto)
+    patrones = [
+        r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)",
+        r"@(-?\d+\.\d+),(-?\d+\.\d+)",
+        r"[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)",
+        r"/search/(-?\d+\.\d+),\s*\+?(-?\d+\.\d+)",
+        r"(-?\d{1,2}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})",
+    ]
+    for p in patrones:
+        m = re.search(p, texto)
+        if m:
+            lat, lng = float(m.group(1)), float(m.group(2))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                return lat, lng
+    return None, None
+
+
+def jp_extraer_coords_maps(url):
+    url = (url or "").strip()
+    if not url:
+        return None, None
+    lat, lng = _jp_buscar_coords(url)
+    if lat is not None:
+        return lat, lng
+    if url.startswith("http://") or url.startswith("https://"):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                final_url = resp.geturl()
+                lat, lng = _jp_buscar_coords(final_url)
+                if lat is not None:
+                    return lat, lng
+                html = resp.read(50000).decode("utf-8", errors="ignore")
+                lat, lng = _jp_buscar_coords(html)
+                if lat is not None:
+                    return lat, lng
+        except Exception:
+            pass
+    return None, None
+
+
+def init_jp_cobrador_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS jp_clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mesa_num TEXT NOT NULL,
+            senor TEXT NOT NULL,
+            ciudad TEXT DEFAULT '',
+            calle TEXT DEFAULT '',
+            lugar TEXT DEFAULT '',
+            ci TEXT DEFAULT '',
+            tarifa INTEGER DEFAULT 1000,
+            maps_url TEXT DEFAULT '',
+            lat REAL DEFAULT NULL,
+            lng REAL DEFAULT NULL,
+            notas TEXT DEFAULT '',
+            activo INTEGER DEFAULT 1,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS jp_lecturas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            reloj INTEGER NOT NULL,
+            cant_jug INTEGER DEFAULT 0,
+            total_gs INTEGER DEFAULT 0,
+            entrega INTEGER DEFAULT 0,
+            saldo_resultante INTEGER DEFAULT 0,
+            observacion TEXT DEFAULT '',
+            FOREIGN KEY (cliente_id) REFERENCES jp_clientes(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS jp_gastos_gira (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            ciudad TEXT DEFAULT '',
+            monto INTEGER DEFAULT 0,
+            descripcion TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS jp_fotos_cliente (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'Reloj',
+            archivo TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            observacion TEXT DEFAULT '',
+            FOREIGN KEY (cliente_id) REFERENCES jp_clientes(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jp_clientes_busqueda ON jp_clientes(mesa_num, senor, ciudad, lugar);
+        CREATE INDEX IF NOT EXISTS idx_jp_lecturas_cliente ON jp_lecturas(cliente_id, id);
+    """)
+    conn.commit()
+    conn.close()
+    respaldar_base_datos()
+
+
+def jp_recalcular_cadena(conn, cliente_id):
+    cliente = conn.execute("SELECT tarifa FROM jp_clientes WHERE id = ?", (cliente_id,)).fetchone()
+    if not cliente:
+        return
+    tarifa = cliente["tarifa"]
+    filas = conn.execute(
+        "SELECT id, reloj, cant_jug, entrega FROM jp_lecturas WHERE cliente_id = ? ORDER BY id ASC",
+        (cliente_id,)
+    ).fetchall()
+    saldo_acum = 0
+    for idx, f in enumerate(filas):
+        if idx == 0:
+            cant = f["cant_jug"] if f["cant_jug"] > 0 else 0
+        else:
+            anterior = filas[idx - 1]["reloj"]
+            cant = max(0, f["reloj"] - anterior)
+        total = cant * tarifa
+        saldo_acum = saldo_acum + total - (f["entrega"] or 0)
+        conn.execute(
+            "UPDATE jp_lecturas SET cant_jug = ?, total_gs = ?, saldo_resultante = ? WHERE id = ?",
+            (cant, total, saldo_acum, f["id"])
+        )
+
+
+init_jp_cobrador_db()
+
+DOBLE_ACCESO_HTML = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doble Acceso — Juegos Patri</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 text-center">
+    <div>
+      <div class="inline-block bg-emerald-600 text-white font-black px-3 py-1.5 rounded-xl text-lg mb-2">JP</div>
+      <h1 class="text-xl font-black text-slate-900">JUEGOS PATRI</h1>
+      <p class="text-xs text-slate-500">Elige el módulo al que deseas ingresar</p>
+    </div>
+
+    <div class="space-y-3">
+      <a href="/" class="block w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 px-4 rounded-xl shadow">
+        🎟️ Módulo de Sorteo
+      </a>
+      <a href="/cobrador" class="block w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 px-4 rounded-xl shadow">
+        🎱 Modo Cobrador / Mesas
+      </a>
+      <a href="/cobrador/qr-etiquetas" class="block w-full bg-slate-800 hover:bg-slate-700 text-white font-extrabold py-2.5 px-4 rounded-xl text-xs">
+        🖨️ Imprimir Etiquetas QR por Mesa
+      </a>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+JP_LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acceso Cobrador — Juegos Patri</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-5">
+    <div class="text-center">
+      <div class="inline-block bg-emerald-600 text-white font-black px-3 py-1.5 rounded-xl text-lg mb-2">JP</div>
+      <h1 class="text-xl font-black text-slate-900">COBRADOR — JUEGOS PATRI</h1>
+      <p class="text-xs text-slate-500">Ingreso para control de mesas y relojes</p>
+    </div>
+    {% if error %}
+      <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold p-2.5 rounded-lg text-center">{{ error }}</div>
+    {% endif %}
+    <form method="POST" class="space-y-3 text-sm">
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">Usuario</label>
+        <input name="username" required autofocus class="w-full px-3 py-2.5 border border-slate-300 rounded-lg" placeholder="cobrador o usuario admin" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
+        <input name="password" type="password" required class="w-full px-3 py-2.5 border border-slate-300 rounded-lg" placeholder="••••••••" />
+      </div>
+      <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-lg shadow">
+        Ingresar a Cobrador
+      </button>
+    </form>
+  </div>
+</body>
+</html>
+"""
+
+JP_QR_HTML = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Etiquetas QR por Mesa — Juegos Patri</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #ffffff !important; padding: 0 !important; }
+      .etiqueta-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #0f172a !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen p-4">
+  <div class="max-w-5xl mx-auto space-y-4">
+    <div class="no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-black text-slate-900">Etiquetas QR por Mesa — Juegos Patri</h1>
+        <p class="text-xs text-slate-500">Cada QR abre directo la carga de esa mesa en <code>/cobrador?mesa=...</code></p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/cobrador" class="bg-slate-200 hover:bg-slate-300 text-slate-900 text-xs font-extrabold px-3.5 py-2.5 rounded-xl">
+          ← Volver a Cobrador
+        </a>
+        <button type="button" onclick="window.print()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl shadow">
+          🖨️ Imprimir todas las etiquetas
+        </button>
+      </div>
+    </div>
+
+    <div id="grid-qr" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+  </div>
+
+  <script>
+    const mesas = {{ mesas | tojson }};
+    const baseUrl = window.location.origin;
+    const grid = document.getElementById('grid-qr');
+
+    if (!mesas.length) {
+      grid.innerHTML = '<div class="col-span-full bg-white p-6 rounded-2xl text-center text-sm text-slate-500 border">No hay mesas activas para generar etiquetas.</div>';
+    } else {
+      mesas.forEach((m, idx) => {
+        const mesaNum = String(m.mesa_num || '').trim();
+        const urlDestino = `${baseUrl}/cobrador?mesa=${encodeURIComponent(mesaNum)}`;
+        const qrId = `qr-box-${idx}`;
+
+        const card = document.createElement('div');
+        card.className = 'etiqueta-card bg-white p-3.5 rounded-2xl border border-slate-300 shadow-sm flex flex-col items-center text-center space-y-2';
+        card.innerHTML = `
+          <div class="w-full flex items-center justify-between text-[10px] font-black uppercase text-slate-500 border-b pb-1.5">
+            <span>JUEGOS PATRI</span>
+            <span class="bg-slate-900 text-white px-2 py-0.5 rounded text-xs">MESA ${mesaNum}</span>
+          </div>
+          <div id="${qrId}" class="py-1 flex items-center justify-center"></div>
+          <div class="w-full">
+            <p class="font-extrabold text-xs text-slate-900 truncate">${m.senor || ''}</p>
+            <p class="text-[11px] text-slate-500 truncate">${m.ciudad || ''}${m.lugar ? ' • ' + m.lugar : ''}</p>
+          </div>
+        `;
+        grid.appendChild(card);
+
+        new QRCode(document.getElementById(qrId), {
+          text: urlDestino,
+          width: 132,
+          height: 132,
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      });
+    }
+  </script>
+</body>
+</html>
+"""
+
+
+@app.route("/acceso")
+def doble_acceso():
+    return render_template_string(DOBLE_ACCESO_HTML)
+
+
+@app.route("/cobrador/login", methods=["GET", "POST"])
+def jp_login():
+    error = None
+    next_url = request.args.get("next") or url_for("vista_cobrador")
+    if request.method == "POST":
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "").strip()
+        es_admin = u in ADMIN_USERS and ADMIN_USERS[u] == p
+        es_cobrador = u == COBRADOR_USER and p == COBRADOR_PASS
+        if es_admin or es_cobrador:
+            session["jp_logged_in"] = True
+            session["jp_role"] = "admin" if es_admin else "cobrador"
+            return redirect(next_url if next_url.startswith("/") else url_for("vista_cobrador"))
+        error = "Usuario o contraseña incorrectos"
+    return render_template_string(JP_LOGIN_HTML, error=error)
+
+
+@app.route("/cobrador/logout")
+def jp_logout():
+    session.pop("jp_logged_in", None)
+    session.pop("jp_role", None)
+    return redirect(url_for("jp_login"))
+
+
+@app.route("/cobrador")
+@jp_login_required
+def vista_cobrador():
+    return render_template("cobrador.html")
+
+
+@app.route("/cobrador/qr-etiquetas")
+@jp_login_required
+def jp_qr_etiquetas():
+    conn = get_db()
+    mesas = [
+        dict(r) for r in conn.execute(
+            """SELECT id, mesa_num, senor, ciudad, lugar
+               FROM jp_clientes
+               WHERE activo = 1
+               ORDER BY CAST(mesa_num AS INTEGER) ASC, mesa_num ASC"""
+        ).fetchall()
+    ]
+    conn.close()
+    return render_template_string(JP_QR_HTML, mesas=mesas)
+
+
+@app.route("/uploads/jp/<path:filename>")
+@jp_login_required
+def jp_servir_foto(filename):
+    return send_from_directory(JP_UPLOAD_DIR, filename)
+
+
+@app.route("/api/jp/clientes", methods=["GET", "POST"])
+@jp_login_required
+def jp_clientes_api():
+    if request.method == "GET":
+        q = request.args.get("q", "").strip()
+        ciudad = request.args.get("ciudad", "").strip()
+
+        sql = """
+            SELECT c.*,
+                   COALESCE((SELECT reloj FROM jp_lecturas WHERE cliente_id = c.id ORDER BY id DESC LIMIT 1), 0) AS ultimo_reloj,
+                   COALESCE((SELECT fecha FROM jp_lecturas WHERE cliente_id = c.id ORDER BY id DESC LIMIT 1), '') AS ultima_fecha,
+                   COALESCE((SELECT saldo_resultante FROM jp_lecturas WHERE cliente_id = c.id ORDER BY id DESC LIMIT 1), 0) AS saldo_actual
+            FROM jp_clientes c
+            WHERE c.activo = 1
+        """
+        params = []
+        if q:
+            sql += " AND (c.mesa_num LIKE ? OR c.senor LIKE ? OR c.lugar LIKE ? OR c.calle LIKE ? OR c.ciudad LIKE ?)"
+            like = f"%{q}%"
+            params.extend([like, like, like, like, like])
+        if ciudad:
+            sql += " AND c.ciudad = ?"
+            params.append(ciudad)
+
+        sql += " ORDER BY CAST(c.mesa_num AS INTEGER) ASC, c.mesa_num ASC"
+
+        conn = get_db()
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        ciudades = [
+            r["ciudad"] for r in conn.execute(
+                "SELECT DISTINCT ciudad FROM jp_clientes WHERE activo = 1 AND ciudad != '' ORDER BY ciudad"
+            ).fetchall()
+        ]
+        conn.close()
+        return jsonify({"clientes": rows, "ciudades": ciudades})
+
+    data = request.json or {}
+    maps_url = (data.get("maps_url") or "").strip()
+    lat, lng = jp_extraer_coords_maps(maps_url)
+    if lat is None and data.get("lat") not in (None, "") and data.get("lng") not in (None, ""):
+        try:
+            lat = float(data["lat"])
+            lng = float(data["lng"])
+            if not maps_url:
+                maps_url = f"https://www.google.com/maps?q={lat},{lng}"
+        except ValueError:
+            lat, lng = None, None
+
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO jp_clientes (mesa_num, senor, ciudad, calle, lugar, ci, tarifa, maps_url, lat, lng, notas)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                str(data.get("mesa_num", "")).strip(),
+                str(data.get("senor", "")).strip(),
+                str(data.get("ciudad", "")).strip(),
+                str(data.get("calle", "")).strip(),
+                str(data.get("lugar", "")).strip(),
+                str(data.get("ci", "")).strip(),
+                int(data.get("tarifa", 1000) or 1000),
+                maps_url,
+                lat,
+                lng,
+                str(data.get("notas", "")).strip()
+            )
+        )
+        cid = cursor.lastrowid
+        reloj_inicial = data.get("reloj_inicial")
+        if reloj_inicial not in (None, ""):
+            cursor.execute(
+                "INSERT INTO jp_lecturas (cliente_id, fecha, reloj, cant_jug, total_gs, entrega, saldo_resultante) VALUES (?, ?, ?, 0, 0, 0, 0)",
+                (cid, data.get("fecha_inicial") or time.strftime("%Y-%m-%d"), int(reloj_inicial))
+            )
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"ok": True, "id": cid})
+
+
+@app.route("/api/jp/cobrador/cargar", methods=["POST"])
+@jp_login_required
+def jp_cobrador_cargar():
+    cid = int(request.form.get("cliente_id"))
+    fecha = request.form.get("fecha") or time.strftime("%Y-%m-%d")
+    reloj = int(request.form.get("reloj"))
+    entrega = int(request.form.get("entrega") or 0)
+    obs = (request.form.get("observacion") or "").strip()
+    lat = (request.form.get("lat") or "").strip()
+    lng = (request.form.get("lng") or "").strip()
+
+    with bloqueo_compra:
+        conn = get_db()
+        ultima = conn.execute(
+            "SELECT reloj FROM jp_lecturas WHERE cliente_id = ? ORDER BY id DESC LIMIT 1", (cid,)
+        ).fetchone()
+        if ultima and reloj < ultima["reloj"]:
+            conn.close()
+            return jsonify({"error": f"El reloj ({reloj}) no puede ser menor al anterior ({ultima['reloj']})"}), 400
+
+        conn.execute(
+            "INSERT INTO jp_lecturas (cliente_id, fecha, reloj, entrega, observacion) VALUES (?, ?, ?, ?, ?)",
+            (cid, fecha, reloj, entrega, obs)
+        )
+        jp_recalcular_cadena(conn, cid)
+
+        archivo = request.files.get("foto")
+        if archivo and archivo.filename:
+            ext = os.path.splitext(archivo.filename)[1].lower()
+            if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+                ext = ".jpg"
+            nombre_unico = f"cli{cid}_{uuid.uuid4().hex[:10]}{ext}"
+            archivo.save(os.path.join(JP_UPLOAD_DIR, nombre_unico))
+            conn.execute(
+                "INSERT INTO jp_fotos_cliente (cliente_id, tipo, archivo, fecha, observacion) VALUES (?, ?, ?, ?, ?)",
+                (cid, "Reloj", nombre_unico, fecha, f"Reloj {reloj} (Cobrador)")
+            )
+
+        if lat and lng:
+            cli = conn.execute("SELECT maps_url, lat, lng FROM jp_clientes WHERE id = ?", (cid,)).fetchone()
+            if cli and (cli["lat"] is None or cli["lng"] is None):
+                url_maps = f"https://www.google.com/maps?q={lat},{lng}"
+                conn.execute(
+                    "UPDATE jp_clientes SET lat=?, lng=?, maps_url=CASE WHEN maps_url='' THEN ? ELSE maps_url END WHERE id=?",
+                    (float(lat), float(lng), url_maps, cid)
+                )
+
+        nueva = dict(conn.execute(
+            "SELECT * FROM jp_lecturas WHERE cliente_id = ? ORDER BY id DESC LIMIT 1", (cid,)
+        ).fetchone())
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"ok": True, "lectura": nueva})
+
+
+@app.route("/api/jp/cobrador/rendicion", methods=["GET"])
+@jp_login_required
+def jp_cobrador_rendicion():
+    hoy = time.strftime("%Y-%m-%d")
+    conn = get_db()
+    cobros = [dict(r) for r in conn.execute("""
+        SELECT l.id, l.fecha, l.reloj, l.cant_jug, l.total_gs, l.entrega, l.saldo_resultante, l.observacion,
+               c.mesa_num, c.senor, c.ciudad
+        FROM jp_lecturas l
+        JOIN jp_clientes c ON c.id = l.cliente_id
+        WHERE l.fecha = ?
+        ORDER BY l.id DESC
+    """, (hoy,)).fetchall()]
+
+    gastos = [dict(r) for r in conn.execute(
+        "SELECT * FROM jp_gastos_gira WHERE fecha = ? ORDER BY id DESC", (hoy,)
+    ).fetchall()]
+    conn.close()
+
+    total_cobrado = sum(c["entrega"] for c in cobros)
+    total_gastos = sum(g["monto"] for g in gastos)
+    return jsonify({
+        "fecha": hoy,
+        "total_cobrado": total_cobrado,
+        "total_gastos": total_gastos,
+        "neto_a_rendir": total_cobrado - total_gastos,
+        "cobros": cobros,
+        "gastos": gastos
+    })
+
+
+@app.route("/api/jp/gastos", methods=["POST"])
+@jp_login_required
+def jp_agregar_gasto():
+    data = request.json or {}
+    with bloqueo_compra:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO jp_gastos_gira (fecha, categoria, ciudad, monto, descripcion) VALUES (?, ?, ?, ?, ?)",
+            (
+                data.get("fecha") or time.strftime("%Y-%m-%d"),
+                str(data.get("categoria", "Combustible")).strip(),
+                str(data.get("ciudad", "")).strip(),
+                int(data.get("monto") or 0),
+                str(data.get("descripcion", "")).strip()
+            )
+        )
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+    return jsonify({"ok": True})
 if __name__ == "__main__":
     app.run(debug=True)

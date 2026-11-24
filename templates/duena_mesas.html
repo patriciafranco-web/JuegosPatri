@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Modo Dueña — Juegos Patri</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col">
+
+  <!-- CABECERA MODO DUEÑA -->
+  <header class="bg-slate-950 text-white px-4 py-3 shadow-lg sticky top-0 z-30 border-b border-slate-800">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <span class="bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg text-sm">JP</span>
+        <div>
+          <h1 class="font-black text-sm leading-tight tracking-wide">MODO DUEÑA — JUEGOS PATRI</h1>
+          <p class="text-[11px] text-slate-400">Control general de parque de mesas, fichas de cobro, rutas, ventas y gastos</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 text-xs font-bold">
+        <button type="button" onclick="abrirModalMesa()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg font-black">
+          + Nueva Mesa
+        </button>
+        <a href="/cobrador" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-2 rounded-lg">
+          📱 Modo Cobrador
+        </a>
+        <a href="/cobrador/qr-etiquetas" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-lg">
+          🖨️ Etiquetas QR
+        </a>
+        <a href="/acceso" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-2 rounded-lg font-black">
+          🔀 Doble Acceso
+        </a>
+        <a href="/cobrador/logout" class="bg-rose-700 hover:bg-rose-600 text-white px-3 py-2 rounded-lg">
+          Salir
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl w-full mx-auto p-4 space-y-4 flex-1">
+
+    <!-- RESUMEN EJECUTIVO DE PARQUE Y COBRANZA -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] font-black text-slate-400 uppercase">Parque Total</span>
+        <strong id="d-parque-total" class="block text-xl font-black text-slate-900 mt-1">400</strong>
+        <span class="text-[10px] text-slate-500">Mesas registradas</span>
+      </div>
+
+      <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] font-black text-slate-400 uppercase">Alquiladas Hoy</span>
+        <strong id="d-alquiladas" class="block text-xl font-black text-emerald-700 mt-1">210</strong>
+        <span id="d-libres-txt" class="text-[10px] text-slate-500">190 disponibles/depósito</span>
+      </div>
+
+      <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] font-black text-slate-400 uppercase">Saldo a Cobrar</span>
+        <strong id="d-saldo-total" class="block text-lg font-black text-amber-700 mt-1">0 Gs.</strong>
+        <span id="d-deudores-cnt" class="text-[10px] text-slate-500">0 mesas con saldo</span>
+      </div>
+
+      <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] font-black text-slate-400 uppercase">Cobrado Hoy</span>
+        <strong id="d-cobrado-hoy" class="block text-lg font-black text-emerald-700 mt-1">0 Gs.</strong>
+        <span class="text-[10px] text-slate-500">Entregas del día</span>
+      </div>
+
+      <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] font-black text-slate-400 uppercase">Gastos Hoy</span>
+        <strong id="d-gastos-hoy" class="block text-lg font-black text-rose-700 mt-1">0 Gs.</strong>
+        <span class="text-[10px] text-slate-500">Combustible / ruta</span>
+      </div>
+
+      <div class="bg-slate-900 text-white p-3.5 rounded-2xl shadow-sm">
+        <span class="text-[10px] font-black text-amber-400 uppercase">Neto Hoy</span>
+        <strong id="d-neto-hoy" class="block text-lg font-black text-emerald-400 mt-1">0 Gs.</strong>
+        <span class="text-[10px] text-slate-400">Caja del día</span>
+      </div>
+    </section>
+
+    <!-- ALERTAS OPERATIVAS DE DUEÑA -->
+    <section id="d-alertas" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs"></section>
+
+    <!-- PESTAÑAS DE MODO DUEÑA -->
+    <div class="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-black">
+      <button id="btn-tab-mesas" type="button" onclick="cambiarTab('mesas')"
+        class="px-4 py-2.5 rounded-xl bg-slate-900 text-white">
+        🎱 Mesas, Fichas y Ubicaciones
+      </button>
+      <button id="btn-tab-finanzas" type="button" onclick="cambiarTab('finanzas')"
+        class="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200">
+        💸 Rendición, Gastos y Proyección Mensual
+      </button>
+    </div>
+
+    <!-- TAB 1: MESAS Y FICHAS DE COBRO -->
+    <section id="sec-mesas" class="space-y-3">
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+        <input id="f-buscar" type="text" oninput="renderizarMesas()"
+          placeholder="Buscar por N° mesa, responsable, ciudad o local..."
+          class="md:col-span-2 px-3.5 py-2 border border-slate-300 rounded-xl bg-slate-50" />
+        <select id="f-ciudad" onchange="renderizarMesas()"
+          class="px-3.5 py-2 border border-slate-300 rounded-xl bg-slate-50 font-semibold">
+          <option value="">Todas las ciudades</option>
+        </select>
+        <select id="f-estado" onchange="renderizarMesas()"
+          class="px-3.5 py-2 border border-slate-300 rounded-xl bg-slate-50 font-semibold">
+          <option value="todas">Todas las mesas</option>
+          <option value="con_saldo">Con saldo pendiente</option>
+          <option value="sin_gps">Sin ubicación GPS</option>
+          <option value="sin_tel">Sin teléfono / contacto</option>
+        </select>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="bg-slate-900 text-white uppercase text-[11px]">
+              <tr>
+                <th class="py-3 px-3">Mesa</th>
+                <th class="py-3 px-3">Responsable / Contacto</th>
+                <th class="py-3 px-3">Ciudad / Local</th>
+                <th class="py-3 px-3">Tarifa</th>
+                <th class="py-3 px-3">Reloj</th>
+                <th class="py-3 px-3">Saldo</th>
+                <th class="py-3 px-3">GPS</th>
+                <th class="py-3 px-3 text-right">Gestión Dueña</th>
+              </tr>
+            </thead>
+            <tbody id="d-tabla-mesas" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: RENDICIÓN, GASTOS Y PROYECCIÓN MENSUAL -->
+    <section id="sec-finanzas" class="hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+          <h3 class="text-sm font-black text-slate-900">📈 Estimación Mensual de Alquileres</h3>
+          <p class="text-xs text-slate-500">Basada en mesas activas/alquiladas y tarifa configurada.</p>
+          <div class="grid grid-cols-2 gap-2 text-xs pt-1">
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">Juegos prom. / día</label>
+              <input id="sim-juegos-dia" type="number" value="25" min="0" oninput="calcularProyeccion()"
+                class="w-full px-3 py-2 border rounded-xl font-bold bg-slate-50" />
+            </div>
+            <div>
+              <label class="block font-bold text-slate-600 mb-1">Días cobrables / mes</label>
+              <input id="sim-dias-mes" type="number" value="26" min="1" max="31" oninput="calcularProyeccion()"
+                class="w-full px-3 py-2 border rounded-xl font-bold bg-slate-50" />
+            </div>
+          </div>
+          <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+            <span class="block text-[11px] font-bold text-emerald-900">Proyección Bruta Mensual:</span>
+            <strong id="sim-resultado" class="text-lg font-black text-emerald-700">0 Gs.</strong>
+          </div>
+        </div>
+
+        <div class="lg:col-span-2 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <h3 class="text-sm font-black text-slate-900">⛽ Cargar Gasto / Mantenimiento / Venta</h3>
+          <form onsubmit="guardarGastoDuena(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+            <select id="dg-cat" class="px-3 py-2.5 border rounded-xl bg-slate-50 font-bold">
+              <option value="Combustible">Combustible</option>
+              <option value="Peaje">Peaje</option>
+              <option value="Mantenimiento Mesa">Mantenimiento Mesa</option>
+              <option value="Paño / Bola / Taco">Paño / Bola / Taco</option>
+              <option value="Venta Equipamiento">Venta Equipamiento</option>
+              <option value="Viático / Comida">Viático / Comida</option>
+            </select>
+            <input id="dg-ciudad" placeholder="Ciudad / Ruta" class="px-3 py-2.5 border rounded-xl bg-slate-50" />
+            <input id="dg-monto" type="number" required min="1" placeholder="Monto Gs." class="px-3 py-2.5 border rounded-xl bg-slate-50 font-bold" />
+            <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-black py-2.5 rounded-xl">
+              + Registrar
+            </button>
+            <input id="dg-desc" placeholder="Detalle (ej: Cambio de paño Mesa 14 / Venta kit)" class="sm:col-span-4 px-3 py-2.5 border rounded-xl bg-slate-50" />
+          </form>
+
+          <div class="pt-2 border-t">
+            <h4 class="text-xs font-black text-slate-700 mb-1.5">MOVIMIENTOS / GASTOS DE HOY</h4>
+            <div id="dg-lista" class="divide-y divide-slate-100 text-xs"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 bg-slate-50 border-b font-black text-xs text-slate-700">COBROS CARGADOS HOY</div>
+        <div id="dg-cobros" class="divide-y divide-slate-100 text-xs"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL FICHA DE COBRO Y LECTURAS DE LA MESA -->
+  <div id="modal-ficha" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+    <div class="bg-white rounded-2xl max-w-3xl w-full p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b pb-3 gap-2">
+        <div>
+          <span id="fc-badge" class="bg-slate-900 text-white text-xs font-black px-2.5 py-0.5 rounded">Mesa</span>
+          <h3 id="fc-titulo" class="text-lg font-black text-slate-900 mt-1">Ficha de Cobro</h3>
+          <p id="fc-sub" class="text-xs text-slate-500"></p>
+        </div>
+        <button type="button" onclick="cerrarFicha()" class="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2.5 bg-slate-50 p-3 rounded-xl border text-center text-xs">
+        <div>
+          <span class="block text-[10px] font-bold text-slate-500 uppercase">Último Reloj</span>
+          <strong id="fc-reloj" class="text-base font-black text-slate-900">0</strong>
+        </div>
+        <div>
+          <span class="block text-[10px] font-bold text-slate-500 uppercase">Tarifa</span>
+          <strong id="fc-tarifa" class="text-base font-black text-slate-900">0 Gs.</strong>
+        </div>
+        <div>
+          <span class="block text-[10px] font-bold text-slate-500 uppercase">Saldo Actual</span>
+          <strong id="fc-saldo" class="text-base font-black text-amber-700">0 Gs.</strong>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 text-xs font-bold">
+        <a id="fc-link-cobrador" href="#" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl">
+          ⚡ Cargar Lectura / Cobro
+        </a>
+        <button id="fc-btn-wa" type="button" onclick="pedirUbicacionWa()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-xl">
+          💬 Solicitar Ubicación por WhatsApp
+        </button>
+        <a id="fc-link-gps" href="#" target="_blank" class="hidden bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl">
+          📍 Ver en Google Maps
+        </a>
+      </div>
+
+      <div>
+        <h4 class="text-xs font-black text-slate-700 uppercase mb-2">Historial de Fichas / Lecturas</h4>
+        <div class="overflow-x-auto border rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="bg-slate-100 text-slate-700 uppercase text-[10px]">
+              <tr>
+                <th class="py-2 px-2.5">Fecha</th>
+                <th class="py-2 px-2.5">Reloj</th>
+                <th class="py-2 px-2.5">Juegos</th>
+                <th class="py-2 px-2.5">Total</th>
+                <th class="py-2 px-2.5">Entrega</th>
+                <th class="py-2 px-2.5">Saldo</th>
+                <th class="py-2 px-2.5">Observación</th>
+              </tr>
+            </thead>
+            <tbody id="fc-tabla-hist" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CREAR / EDITAR MESA -->
+  <div id="modal-mesa" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-3 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 id="mm-titulo" class="font-black text-base text-slate-900">+ Nueva Mesa / Cliente</h3>
+        <button type="button" onclick="cerrarModalMesa()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+      </div>
+
+      <form onsubmit="guardarMesaDuena(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+        <input id="mm-id" type="hidden" />
+        <div>
+          <label class="block font-bold mb-1">Mesa N° *</label>
+          <input id="mm-mesa" required class="w-full px-3 py-2 border rounded-xl font-bold" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Tarifa (Gs.) *</label>
+          <select id="mm-tarifa" class="w-full px-3 py-2 border rounded-xl font-bold bg-slate-50">
+            <option value="1000">1.000 Gs.</option>
+            <option value="750">750 Gs.</option>
+            <option value="500">500 Gs.</option>
+            <option value="1500">1.500 Gs.</option>
+            <option value="2000">2.000 Gs.</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block font-bold mb-1">Responsable / Señor *</label>
+          <input id="mm-senor" required class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Ciudad</label>
+          <input id="mm-ciudad" class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Lugar / Local</label>
+          <input id="mm-lugar" class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Teléfono / Calle</label>
+          <input id="mm-calle" class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">C.I.</label>
+          <input id="mm-ci" class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div id="mm-bloque-reloj">
+          <label class="block font-bold mb-1">Reloj Inicial</label>
+          <input id="mm-reloj" type="number" class="w-full px-3 py-2 border rounded-xl font-bold" />
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Link Google Maps</label>
+          <input id="mm-maps" placeholder="https://maps.google.com/..." class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block font-bold mb-1">Notas de Dueña</label>
+          <input id="mm-notas" class="w-full px-3 py-2 border rounded-xl" />
+        </div>
+        <div class="sm:col-span-2 flex gap-2 pt-2">
+          <button type="button" onclick="cerrarModalMesa()" class="flex-1 py-2.5 bg-slate-100 font-bold rounded-xl">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const fmt = (n) => Number(n || 0).toLocaleString('es-PY');
+    const PARQUE_TOTAL = 400;
+    const ALQUILADAS_BASE = 210;
+
+    let mesas = [];
+    let mesaActiva = null;
+
+    function cambiarTab(tab) {
+      document.getElementById('sec-mesas').classList.toggle('hidden', tab !== 'mesas');
+      document.getElementById('sec-finanzas').classList.toggle('hidden', tab !== 'finanzas');
+      document.getElementById('btn-tab-mesas').className = tab === 'mesas'
+        ? 'px-4 py-2.5 rounded-xl bg-slate-900 text-white'
+        : 'px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200';
+      document.getElementById('btn-tab-finanzas').className = tab === 'finanzas'
+        ? 'px-4 py-2.5 rounded-xl bg-slate-900 text-white'
+        : 'px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200';
+      if (tab === 'finanzas') {
+        cargarFinanzas();
+        calcularProyeccion();
+      }
+    }
+
+    async function cargarDuena() {
+      const res = await fetch('/api/jp/clientes');
+      if (!res.ok) return;
+      const data = await res.json();
+      mesas = data.clientes || [];
+
+      const alquiladas = Math.max(ALQUILADAS_BASE, mesas.length);
+      const disponibles = Math.max(0, PARQUE_TOTAL - alquiladas);
+      document.getElementById('d-parque-total').textContent = fmt(PARQUE_TOTAL);
+      document.getElementById('d-alquiladas').textContent = fmt(alquiladas);
+      document.getElementById('d-libres-txt').textContent = `${fmt(disponibles)} disponibles / taller`;
+
+      const selCiudad = document.getElementById('f-ciudad');
+      const actual = selCiudad.value;
+      selCiudad.innerHTML = '<option value="">Todas las ciudades</option>' +
+        (data.ciudades || []).map(c => `<option value="${c}" ${c === actual ? 'selected' : ''}>${c}</option>`).join('');
+
+      renderAlertas();
+      renderizarMesas();
+      cargarFinanzas();
+      calcularProyeccion();
+    }
+
+    function renderAlertas() {
+      const sinGps = mesas.filter(m => !(m.maps_url || '').trim()).length;
+      const sinTel = mesas.filter(m => !(m.calle || '').trim()).length;
+      const conSaldo = mesas.filter(m => Number(m.saldo_actual || 0) > 0).length;
+
+      document.getElementById('d-alertas').innerHTML = `
+        <div class="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex items-center justify-between">
+          <div>
+            <strong class="text-amber-950">📍 Ubicación y Contacto Pendiente</strong>
+            <p class="text-amber-800 mt-0.5">${fmt(sinGps)} mesa(s) sin GPS • ${fmt(sinTel)} sin teléfono registrado</p>
+          </div>
+          <button type="button" onclick="filtrarRapido('sin_gps')" class="bg-amber-600 text-white px-3 py-1.5 rounded-xl font-black shrink-0">Ver sin GPS</button>
+        </div>
+        <div class="bg-sky-50 border border-sky-200 p-3 rounded-2xl flex items-center justify-between">
+          <div>
+            <strong class="text-sky-950">💼 Seguimiento de Cartera</strong>
+            <p class="text-sky-800 mt-0.5">${fmt(conSaldo)} mesa(s) con saldo pendiente de cobro</p>
+          </div>
+          <button type="button" onclick="filtrarRapido('con_saldo')" class="bg-sky-700 text-white px-3 py-1.5 rounded-xl font-black shrink-0">Ver con saldo</button>
+        </div>
+      `;
+    }
+
+    function filtrarRapido(estado) {
+      document.getElementById('f-estado').value = estado;
+      cambiarTab('mesas');
+      renderizarMesas();
+    }
+
+    function renderizarMesas() {
+      const q = (document.getElementById('f-buscar').value || '').trim().toLowerCase();
+      const ciudad = document.getElementById('f-ciudad').value;
+      const estado = document.getElementById('f-estado').value;
+
+      const filtradas = mesas.filter(c => {
+        if (ciudad && (c.ciudad || '').trim() !== ciudad) return false;
+        if (estado === 'con_saldo' && Number(c.saldo_actual || 0) <= 0) return false;
+        if (estado === 'sin_gps' && (c.maps_url || '').trim()) return false;
+        if (estado === 'sin_tel' && (c.calle || '').trim()) return false;
+        if (!q) return true;
+        return String(c.mesa_num || '').toLowerCase().includes(q) ||
+               String(c.senor || '').toLowerCase().includes(q) ||
+               String(c.lugar || '').toLowerCase().includes(q) ||
+               String(c.ciudad || '').toLowerCase().includes(q) ||
+               String(c.calle || '').toLowerCase().includes(q);
+      });
+
+      const conSaldo = filtradas.filter(c => Number(c.saldo_actual || 0) > 0);
+      const totalSaldo = conSaldo.reduce((s, c) => s + Number(c.saldo_actual || 0), 0);
+      document.getElementById('d-saldo-total').textContent = fmt(totalSaldo) + ' Gs.';
+      document.getElementById('d-deudores-cnt').textContent = `${fmt(conSaldo.length)} mesa(s) con saldo`;
+
+      document.getElementById('d-tabla-mesas').innerHTML = filtradas.length
+        ? filtradas.map(c => `
+            <tr class="hover:bg-slate-50">
+              <td class="py-2.5 px-3 font-black whitespace-nowrap">Mesa ${c.mesa_num}</td>
+              <td class="py-2.5 px-3">
+                <div class="font-bold text-slate-900">${c.senor}</div>
+                <div class="text-[11px] text-slate-500">${c.calle || 'Sin contacto'}</div>
+              </td>
+              <td class="py-2.5 px-3 text-slate-600">${c.ciudad || ''} ${c.lugar ? '• ' + c.lugar : ''}</td>
+              <td class="py-2.5 px-3 font-semibold whitespace-nowrap">${fmt(c.tarifa)} Gs.</td>
+              <td class="py-2.5 px-3 font-bold whitespace-nowrap">${fmt(c.ultimo_reloj)}</td>
+              <td class="py-2.5 px-3 whitespace-nowrap">
+                <span class="px-2 py-0.5 rounded font-black ${Number(c.saldo_actual || 0) > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                  ${fmt(c.saldo_actual)} Gs.
+                </span>
+              </td>
+              <td class="py-2.5 px-3 whitespace-nowrap">
+                ${(c.maps_url || '').trim()
+                  ? `<a href="${c.maps_url}" target="_blank" class="text-sky-700 font-bold underline">📍 Mapa</a>`
+                  : `<span class="text-slate-400">Sin GPS</span>`}
+              </td>
+              <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
+                <button type="button" onclick="abrirFicha(${c.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded font-bold">Ficha</button>
+                <button type="button" onclick="abrirModalMesa(${c.id})" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-1 rounded font-bold">Editar</button>
+                <button type="button" onclick="borrarMesaDuena(${c.id}, '${c.mesa_num}')" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2.5 py-1 rounded font-bold">✕</button>
+              </td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="8" class="py-6 text-center text-slate-400">No hay mesas que coincidan con el filtro.</td></tr>';
+    }
+
+    async function abrirFicha(id) {
+      mesaActiva = mesas.find(m => m.id === id);
+      if (!mesaActiva) return;
+
+      document.getElementById('fc-badge').textContent = `Mesa ${mesaActiva.mesa_num}`;
+      document.getElementById('fc-titulo').textContent = mesaActiva.senor;
+      document.getElementById('fc-sub').textContent = `${mesaActiva.ciudad || ''} ${mesaActiva.lugar ? '• ' + mesaActiva.lugar : ''} ${mesaActiva.calle ? '• ' + mesaActiva.calle : ''}`;
+      document.getElementById('fc-reloj').textContent = fmt(mesaActiva.ultimo_reloj);
+      document.getElementById('fc-tarifa').textContent = fmt(mesaActiva.tarifa) + ' Gs.';
+      document.getElementById('fc-saldo').textContent = fmt(mesaActiva.saldo_actual) + ' Gs.';
+      document.getElementById('fc-link-cobrador').href = `/cobrador?mesa=${encodeURIComponent(mesaActiva.mesa_num)}`;
+
+      const linkGps = document.getElementById('fc-link-gps');
+      if ((mesaActiva.maps_url || '').trim()) {
+        linkGps.href = mesaActiva.maps_url;
+        linkGps.classList.remove('hidden');
+      } else {
+        linkGps.classList.add('hidden');
+      }
+
+      document.getElementById('fc-tabla-hist').innerHTML = '<tr><td colspan="7" class="py-3 text-center text-slate-400">Cargando...</td></tr>';
+      document.getElementById('modal-ficha').classList.remove('hidden');
+
+      const res = await fetch(`/api/jp/clientes/${id}/lecturas`);
+      const data = await res.json();
+      const hist = data.lecturas || [];
+      document.getElementById('fc-tabla-hist').innerHTML = hist.length
+        ? hist.map(f => `
+            <tr>
+              <td class="py-2 px-2.5">${f.fecha}</td>
+              <td class="py-2 px-2.5 font-bold">${fmt(f.reloj)}</td>
+              <td class="py-2 px-2.5">${fmt(f.cant_jug)}</td>
+              <td class="py-2 px-2.5">${fmt(f.total_gs)} Gs.</td>
+              <td class="py-2 px-2.5 font-bold text-emerald-700">${fmt(f.entrega)} Gs.</td>
+              <td class="py-2 px-2.5 font-bold text-amber-800">${fmt(f.saldo_resultante)} Gs.</td>
+              <td class="py-2 px-2.5 text-slate-500">${f.observacion || ''}</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="7" class="py-3 text-center text-slate-400">Sin lecturas registradas.</td></tr>';
+    }
+
+    function cerrarFicha() {
+      document.getElementById('modal-ficha').classList.add('hidden');
+    }
+
+    function pedirUbicacionWa() {
+      if (!mesaActiva) return;
+      const msg = `Hola ${mesaActiva.senor}, le escribimos de la nueva administración de *Juegos Patri* por la *Mesa N° ${mesaActiva.mesa_num}*. ¿Nos podría compartir por favor la ubicación actual del local por este medio? ¡Muchas gracias!`;
+      const nums = (mesaActiva.calle || '').replace(/\D/g, '');
+      let tel = '';
+      if (nums.startsWith('595')) tel = nums;
+      else if (nums.startsWith('09') && nums.length >= 10) tel = '595' + nums.slice(1, 10);
+      else if (nums.startsWith('9') && nums.length >= 9) tel = '595' + nums.slice(0, 9);
+      window.open(tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    function abrirModalMesa(id = null) {
+      if (id) {
+        const m = mesas.find(x => x.id === id);
+        if (!m) return;
+        document.getElementById('mm-titulo').textContent = `Editar Mesa ${m.mesa_num}`;
+        document.getElementById('mm-id').value = m.id;
+        document.getElementById('mm-mesa').value = m.mesa_num || '';
+        document.getElementById('mm-tarifa').value = String(m.tarifa || 1000);
+        document.getElementById('mm-senor').value = m.senor || '';
+        document.getElementById('mm-ciudad').value = m.ciudad || '';
+        document.getElementById('mm-lugar').value = m.lugar || '';
+        document.getElementById('mm-calle').value = m.calle || '';
+        document.getElementById('mm-ci').value = m.ci || '';
+        document.getElementById('mm-maps').value = m.maps_url || '';
+        document.getElementById('mm-notas').value = m.notas || '';
+        document.getElementById('mm-bloque-reloj').classList.add('hidden');
+      } else {
+        document.getElementById('mm-titulo').textContent = '+ Nueva Mesa / Cliente';
+        document.getElementById('mm-id').value = '';
+        ['mm-mesa', 'mm-senor', 'mm-ciudad', 'mm-lugar', 'mm-calle', 'mm-ci', 'mm-reloj', 'mm-maps', 'mm-notas'].forEach(k => {
+          document.getElementById(k).value = '';
+        });
+        document.getElementById('mm-tarifa').value = '1000';
+        document.getElementById('mm-bloque-reloj').classList.remove('hidden');
+      }
+      document.getElementById('modal-mesa').classList.remove('hidden');
+    }
+
+    function cerrarModalMesa() {
+      document.getElementById('modal-mesa').classList.add('hidden');
+    }
+
+    async function guardarMesaDuena(e) {
+      e.preventDefault();
+      const idVal = document.getElementById('mm-id').value;
+      const payload = {
+        mesa_num: document.getElementById('mm-mesa').value.trim(),
+        tarifa: Number(document.getElementById('mm-tarifa').value || 1000),
+        senor: document.getElementById('mm-senor').value.trim(),
+        ciudad: document.getElementById('mm-ciudad').value.trim(),
+        lugar: document.getElementById('mm-lugar').value.trim(),
+        calle: document.getElementById('mm-calle').value.trim(),
+        ci: document.getElementById('mm-ci').value.trim(),
+        reloj_inicial: document.getElementById('mm-reloj').value.trim(),
+        maps_url: document.getElementById('mm-maps').value.trim(),
+        notas: document.getElementById('mm-notas').value.trim()
+      };
+      const res = await fetch(idVal ? `/api/jp/clientes/${idVal}` : '/api/jp/clientes', {
+        method: idVal ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert('Error al guardar la mesa');
+      cerrarModalMesa();
+      cargarDuena();
+    }
+
+    async function borrarMesaDuena(id, num) {
+      if (!confirm(`¿Desactivar la Mesa ${num}?`)) return;
+      const res = await fetch(`/api/jp/clientes/${id}`, { method: 'DELETE' });
+      if (res.ok) cargarDuena();
+    }
+
+    function calcularProyeccion() {
+      const juegosDia = Number(document.getElementById('sim-juegos-dia').value || 0);
+      const diasMes = Number(document.getElementById('sim-dias-mes').value || 26);
+      const baseMesas = Math.max(ALQUILADAS_BASE, mesas.length);
+      const tarifaProm = mesas.length
+        ? mesas.reduce((acc, m) => acc + Number(m.tarifa || 1000), 0) / mesas.length
+        : 1000;
+      const bruto = Math.round(baseMesas * juegosDia * diasMes * tarifaProm);
+      document.getElementById('sim-resultado').textContent = fmt(bruto) + ' Gs.';
+    }
+
+    async function cargarFinanzas() {
+      const res = await fetch('/api/jp/cobrador/rendicion');
+      if (!res.ok) return;
+      const d = await res.json();
+
+      document.getElementById('d-cobrado-hoy').textContent = fmt(d.total_cobrado) + ' Gs.';
+      document.getElementById('d-gastos-hoy').textContent = fmt(d.total_gastos) + ' Gs.';
+      document.getElementById('d-neto-hoy').textContent = fmt(d.neto_a_rendir) + ' Gs.';
+
+      document.getElementById('dg-lista').innerHTML = (d.gastos || []).length
+        ? d.gastos.map(g => `
+            <div class="py-2 flex justify-between items-center">
+              <div>
+                <strong class="text-slate-900">${g.categoria}</strong>
+                <span class="text-slate-500">${g.ciudad ? ' • ' + g.ciudad : ''}${g.descripcion ? ' — ' + g.descripcion : ''}</span>
+              </div>
+              <strong class="text-rose-700">${fmt(g.monto)} Gs.</strong>
+            </div>
+          `).join('')
+        : '<div class="py-3 text-slate-400">Sin movimientos registrados hoy.</div>';
+
+      document.getElementById('dg-cobros').innerHTML = (d.cobros || []).length
+        ? d.cobros.map(c => `
+            <div class="p-3 flex justify-between items-center">
+              <div>
+                <span class="font-black bg-slate-900 text-white px-1.5 py-0.5 rounded">Mesa ${c.mesa_num}</span>
+                <strong class="ml-1.5">${c.senor}</strong>
+                <span class="text-slate-500"> • Reloj: ${fmt(c.reloj)} (${fmt(c.cant_jug)} jug.)</span>
+              </div>
+              <strong class="text-emerald-700">${fmt(c.entrega)} Gs.</strong>
+            </div>
+          `).join('')
+        : '<div class="p-4 text-center text-slate-400">Sin cobros cargados hoy.</div>';
+    }
+
+    async function guardarGastoDuena(e) {
+      e.preventDefault();
+      await fetch('/api/jp/gastos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha: new Date().toISOString().split('T')[0],
+          categoria: document.getElementById('dg-cat').value,
+          ciudad: document.getElementById('dg-ciudad').value.trim(),
+          monto: document.getElementById('dg-monto').value,
+          descripcion: document.getElementById('dg-desc').value.trim()
+        })
+      });
+      document.getElementById('dg-monto').value = '';
+      document.getElementById('dg-desc').value = '';
+      cargarFinanzas();
+    }
+
+    cargarDuena();
+  </script>
+</body>
+</html>

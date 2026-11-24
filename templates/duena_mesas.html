@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Modo Dueña — Juegos Patri</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col">
 
@@ -89,6 +91,10 @@
         class="px-4 py-2.5 rounded-xl bg-slate-900 text-white">
         🎱 Mesas, Fichas, Fotos y Ubicaciones
       </button>
+      <button id="btn-tab-mapa" type="button" onclick="cambiarTab('mapa')"
+        class="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200">
+        🗺️ Mapa GPS y Recorrido por Ciudad
+      </button>
       <button id="btn-tab-finanzas" type="button" onclick="cambiarTab('finanzas')"
         class="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200">
         💸 Rendición, Gastos y Proyección Mensual
@@ -135,7 +141,64 @@
       </div>
     </section>
 
-    <!-- TAB 2: RENDICIÓN, GASTOS Y PROYECCIÓN MENSUAL -->
+    <!-- TAB 2: MAPA GPS Y RECORRIDO POR CIUDAD -->
+    <section id="sec-mapa" class="hidden space-y-4">
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-black text-slate-900">🗺️ Mapa de Mesas y Planificador de Viaje</h3>
+            <p class="text-xs text-slate-500">Filtra por ciudad, ordena las paradas y abre el recorrido en Google Maps.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-bold">
+            <button type="button" onclick="usarUbicacionActual()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl">
+              📍 Mi Ubicación
+            </button>
+            <button type="button" onclick="ordenarPorCercania()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl">
+              🧭 Ordenar por Cercanía
+            </button>
+            <a id="btn-abrir-ruta-gmaps" href="#" target="_blank"
+              class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3.5 py-2 rounded-xl font-black">
+              🚗 Abrir Recorrido en Google Maps
+            </a>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div>
+            <label class="block font-bold text-slate-600 mb-1">Ciudad del Viaje</label>
+            <select id="ruta-ciudad" onchange="construirRecorrido()"
+              class="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold">
+              <option value="">Todas las ciudades con GPS</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 mb-1">Filtro de Mesas</label>
+            <select id="ruta-filtro" onchange="construirRecorrido()"
+              class="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold">
+              <option value="todas">Todas con GPS</option>
+              <option value="con_saldo">Solo con saldo pendiente</option>
+            </select>
+          </div>
+          <div class="bg-slate-50 border rounded-xl p-2.5 flex flex-col justify-center">
+            <span class="text-[10px] font-bold text-slate-500 uppercase">Resumen del Recorrido</span>
+            <strong id="ruta-resumen" class="text-xs font-black text-slate-900">0 paradas con GPS</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div id="mapa-recorrido" class="w-full h-[430px] z-10"></div>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-2.5 max-h-[430px] overflow-y-auto">
+          <h4 class="text-xs font-black text-slate-700 uppercase">Orden de Paradas del Viaje</h4>
+          <div id="ruta-lista-paradas" class="space-y-2 text-xs"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: RENDICIÓN, GASTOS Y PROYECCIÓN MENSUAL -->
     <section id="sec-finanzas" class="hidden space-y-4">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
@@ -330,16 +393,27 @@
 
     let mesas = [];
     let mesaActiva = null;
+    let mapaLeaflet = null;
+    let capaMarcadores = null;
+    let origenCoords = null;
+    let paradasOrdenadas = [];
 
     function cambiarTab(tab) {
       document.getElementById('sec-mesas').classList.toggle('hidden', tab !== 'mesas');
+      document.getElementById('sec-mapa').classList.toggle('hidden', tab !== 'mapa');
       document.getElementById('sec-finanzas').classList.toggle('hidden', tab !== 'finanzas');
+
       document.getElementById('btn-tab-mesas').className = tab === 'mesas'
+        ? 'px-4 py-2.5 rounded-xl bg-slate-900 text-white'
+        : 'px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200';
+      document.getElementById('btn-tab-mapa').className = tab === 'mapa'
         ? 'px-4 py-2.5 rounded-xl bg-slate-900 text-white'
         : 'px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200';
       document.getElementById('btn-tab-finanzas').className = tab === 'finanzas'
         ? 'px-4 py-2.5 rounded-xl bg-slate-900 text-white'
         : 'px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200';
+
+      if (tab === 'mapa') construirRecorrido();
       if (tab === 'finanzas') {
         cargarFinanzas();
         calcularProyeccion();
@@ -367,6 +441,9 @@
       renderizarMesas();
       cargarFinanzas();
       calcularProyeccion();
+      if (!document.getElementById('sec-mapa').classList.contains('hidden')) {
+        construirRecorrido();
+      }
     }
 
     function renderAlertas() {
@@ -450,6 +527,142 @@
             </tr>
           `).join('')
         : '<tr><td colspan="8" class="py-6 text-center text-slate-400">No hay mesas que coincidan con el filtro.</td></tr>';
+    }
+
+    function distanciaKm(a, b) {
+      const R = 6371;
+      const dLat = (b.lat - a.lat) * Math.PI / 180;
+      const dLng = (b.lng - a.lng) * Math.PI / 180;
+      const x = Math.sin(dLat / 2) ** 2 +
+        Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+
+    function inicializarMapaSiHaceFalta() {
+      if (mapaLeaflet) {
+        setTimeout(() => mapaLeaflet.invalidateSize(), 120);
+        return;
+      }
+      mapaLeaflet = L.map('mapa-recorrido').setView([-25.5097, -54.6111], 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(mapaLeaflet);
+      capaMarcadores = L.layerGroup().addTo(mapaLeaflet);
+    }
+
+    function usarUbicacionActual() {
+      if (!navigator.geolocation) return alert('Tu navegador no soporta geolocalización.');
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          origenCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          ordenarPorCercania();
+        },
+        () => alert('No se pudo obtener tu ubicación actual.')
+      );
+    }
+
+    function ordenarPorCercania() {
+      if (!paradasOrdenadas.length) return;
+      let punto = origenCoords || { lat: paradasOrdenadas[0].lat, lng: paradasOrdenadas[0].lng };
+      const restantes = [...paradasOrdenadas];
+      const orden = [];
+      while (restantes.length) {
+        restantes.sort((a, b) => distanciaKm(punto, a) - distanciaKm(punto, b));
+        const sig = restantes.shift();
+        orden.push(sig);
+        punto = { lat: sig.lat, lng: sig.lng };
+      }
+      paradasOrdenadas = orden;
+      dibujarMapaYParadas();
+    }
+
+    function construirRecorrido() {
+      inicializarMapaSiHaceFalta();
+
+      const ciudadesConGps = [...new Set(
+        mesas
+          .filter(m => m.lat !== null && m.lng !== null && !Number.isNaN(Number(m.lat)) && !Number.isNaN(Number(m.lng)) && (m.ciudad || '').trim())
+          .map(m => m.ciudad.trim())
+      )].sort();
+
+      const selRutaCiudad = document.getElementById('ruta-ciudad');
+      const ciudadSel = selRutaCiudad.value;
+      selRutaCiudad.innerHTML = '<option value="">Todas las ciudades con GPS</option>' +
+        ciudadesConGps.map(c => `<option value="${c}" ${c === ciudadSel ? 'selected' : ''}>${c}</option>`).join('');
+
+      const filtroRuta = document.getElementById('ruta-filtro').value;
+      paradasOrdenadas = mesas
+        .filter(m => m.lat !== null && m.lng !== null && !Number.isNaN(Number(m.lat)) && !Number.isNaN(Number(m.lng)))
+        .filter(m => !ciudadSel || (m.ciudad || '').trim() === ciudadSel)
+        .filter(m => filtroRuta !== 'con_saldo' || Number(m.saldo_actual || 0) > 0)
+        .map(m => ({ ...m, lat: Number(m.lat), lng: Number(m.lng) }));
+
+      dibujarMapaYParadas();
+    }
+
+    function dibujarMapaYParadas() {
+      if (!mapaLeaflet || !capaMarcadores) return;
+      capaMarcadores.clearLayers();
+
+      const listaEl = document.getElementById('ruta-lista-paradas');
+      const resumenEl = document.getElementById('ruta-resumen');
+      const btnGmaps = document.getElementById('btn-abrir-ruta-gmaps');
+
+      if (!paradasOrdenadas.length) {
+        resumenEl.textContent = '0 paradas con GPS';
+        btnGmaps.href = '#';
+        listaEl.innerHTML = '<div class="text-slate-400 py-4 text-center">No hay mesas con coordenadas GPS en este filtro.</div>';
+        return;
+      }
+
+      const puntos = [];
+      if (origenCoords) {
+        puntos.push([origenCoords.lat, origenCoords.lng]);
+        L.circleMarker([origenCoords.lat, origenCoords.lng], { radius: 8, color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.9 })
+          .bindPopup('<b>Inicio / Tu ubicación</b>')
+          .addTo(capaMarcadores);
+      }
+
+      paradasOrdenadas.forEach((p, idx) => {
+        puntos.push([p.lat, p.lng]);
+        L.marker([p.lat, p.lng])
+          .bindPopup(`<b>#${idx + 1} — Mesa ${p.mesa_num}</b><br>${p.senor}<br>${p.ciudad || ''} ${p.lugar ? '• ' + p.lugar : ''}`)
+          .addTo(capaMarcadores);
+      });
+
+      if (puntos.length > 1) {
+        L.polyline(puntos, { color: '#059669', weight: 4, dashArray: '6, 6' }).addTo(capaMarcadores);
+        mapaLeaflet.fitBounds(puntos, { padding: [25, 25] });
+      } else {
+        mapaLeaflet.setView(puntos[0], 14);
+      }
+
+      resumenEl.textContent = `${paradasOrdenadas.length} parada(s) con GPS`;
+
+      const coordsStr = paradasOrdenadas.slice(0, 10).map(p => `${p.lat},${p.lng}`);
+      if (origenCoords) {
+        const dest = coordsStr.pop();
+        const wp = coordsStr.join('/');
+        btnGmaps.href = wp
+          ? `https://www.google.com/maps/dir/${origenCoords.lat},${origenCoords.lng}/${wp}/${dest}`
+          : `https://www.google.com/maps/dir/${origenCoords.lat},${origenCoords.lng}/${dest}`;
+      } else if (coordsStr.length === 1) {
+        btnGmaps.href = `https://www.google.com/maps/search/?api=1&query=${coordsStr[0]}`;
+      } else {
+        btnGmaps.href = `https://www.google.com/maps/dir/${coordsStr.join('/')}`;
+      }
+
+      listaEl.innerHTML = paradasOrdenadas.map((p, i) => `
+        <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-2">
+          <div>
+            <span class="bg-slate-900 text-white font-black px-1.5 py-0.5 rounded text-[10px]">#${i + 1}</span>
+            <strong class="ml-1 text-slate-900">Mesa ${p.mesa_num} — ${p.senor}</strong>
+            <div class="text-[11px] text-slate-500 mt-0.5">${p.ciudad || ''} ${p.lugar ? '• ' + p.lugar : ''}</div>
+          </div>
+          <button type="button" onclick="abrirFicha(${p.id})" class="bg-white border px-2 py-1 rounded-lg font-bold text-[11px] shrink-0">Ficha</button>
+        </div>
+      `).join('');
     }
 
     async function abrirFicha(id) {

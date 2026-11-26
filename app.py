@@ -267,7 +267,7 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
             INSERT INTO sorteos (id, titulo, precio, limite_boletos, estado, imagen_nombre)
-            VALUES (1, 'Sorteo de Fin de Año: Mesa de Billar Profesional + Kit Asadito', 2000, 6500, 'Activo', 'flyer_sorteo.jpeg')
+            VALUES (1, 'Sorteo Juegos Patri: 1° Mesa de Billar • 2° Speaker', 2000, 6500, 'Activo', 'flyer_sorteo.jpeg')
         """)
 
     conn.commit()
@@ -842,12 +842,13 @@ def webhook_whatsapp():
 
         if "hola" in mensaje_lower or paso == "INICIO":
             sesion["paso"] = "ESPERANDO_COMBO"
-            titulo_sorteo = sorteo["titulo"] if sorteo else "Sorteo General"
             precio_unitario = sorteo["precio"] if sorteo else 2000
 
             caption = (
                 f"¡Hola! Bienvenido a *JUEGOS PATRI* 🍀🎱\n"
-                f"{titulo_sorteo} 🥩🍺\n"
+                f"🏆 *1° Premio:* Mesa de Billar\n"
+                f"🔊 *2° Premio:* Speaker\n"
+                f"⚡ *¡Además, tenemos Juegos Locos activos!* 🎲\n"
                 f"*(Valor unitario: {precio_unitario:,} Gs. c/u)*\n\n"
                 f"🔥 *¡APROVECHA NUESTROS COMBOS O ELIGE TU CANTIDAD:* \n\n"
                 f"1️⃣ *Combo 1:* 10.000 Gs. = 6 boletas *(¡1 de regalo!)*\n"

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raspadita de Nombres — Juegos Patri</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen p-4 font-sans">
+  <div class="max-w-3xl mx-auto space-y-6">
+    <header class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <span class="text-xs font-black uppercase tracking-wider text-amber-400">Juego Loco Instantáneo</span>
+        <h1 id="tituloCartilla" class="text-xl font-black text-white">Raspadita de Nombres</h1>
+      </div>
+      <a href="/" class="text-xs font-bold bg-slate-800 hover:bg-slate-700 px-3.5 py-2 rounded-xl border border-slate-700">
+        ← Volver al Sorteo Principal
+      </a>
+    </header>
+
+    <!-- Información de Premio y Estado Ganador -->
+    <div id="infoPanel" class="hidden bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border border-amber-400/40 rounded-2xl p-5 space-y-3">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
+        <div class="bg-slate-900/80 p-3 rounded-xl">
+          <p class="text-[11px] text-slate-400">PREMIO</p>
+          <p id="premioCartilla" class="font-black text-amber-400 text-sm sm:text-base">-</p>
+        </div>
+        <div class="bg-slate-900/80 p-3 rounded-xl">
+          <p class="text-[11px] text-slate-400">VALOR POR NOMBRE</p>
+          <p id="precioCartilla" class="font-black text-emerald-400 text-sm sm:text-base">-</p>
+        </div>
+        <div class="col-span-2 sm:col-span-1 bg-slate-900/80 p-3 rounded-xl">
+          <p class="text-[11px] text-slate-400">NOMBRE GANADOR</p>
+          <p id="ganadorCartilla" class="font-black text-rose-400 text-sm sm:text-base">🔒 OCULTO</p>
+        </div>
+      </div>
+      <p class="text-xs text-slate-300 text-center">
+        Elige un nombre disponible, ingresa tus datos, raspa tu casilla y envía tu comprobante del BNF (<strong>0981047851 - Patricia Franco</strong>).
+      </p>
+    </div>
+
+    <div id="sinCartilla" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-sm">
+      No hay una cartilla de raspadita activa en este momento. ¡Vuelve pronto!
+    </div>
+
+    <!-- Grilla de Nombres -->
+    <div id="gridNombres" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5"></div>
+  </div>
+
+  <!-- Modal para Elegir y Raspar -->
+  <div id="modalRaspar" class="fixed inset-0 bg-black/80 hidden items-center justify-center p-4 z-50">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 space-y-4">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-black text-amber-400">Reservar Nombre</h2>
+        <button onclick="cerrarModal()" class="text-slate-400 hover:text-white font-bold">✕</button>
+      </div>
+
+      <!-- Tarjeta interactiva para raspar -->
+      <div class="relative w-full h-24 rounded-xl overflow-hidden border-2 border-amber-400 flex items-center justify-center bg-emerald-600 select-none">
+        <span id="nombreOculto" class="text-2xl font-black tracking-wider text-white">NOMBRE</span>
+        <canvas id="canvasRaspar" width="320" height="96" class="absolute inset-0 w-full h-full cursor-pointer touch-none"></canvas>
+      </div>
+      <p class="text-[11px] text-center text-slate-400">Pasa el dedo o el mouse por la zona gris para raspar tu nombre</p>
+
+      <form id="formReservar" class="space-y-3 text-sm">
+        <input type="hidden" id="casillaIdInput" />
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">Tu Nombre Completo</label>
+          <input id="inpNombre" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white" placeholder="Ej: Juan Pérez" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">Teléfono / WhatsApp</label>
+          <input id="inpTelefono" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white" placeholder="Ej: 0981123456" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">Cédula (Opcional)</label>
+          <input id="inpCedula" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white" placeholder="Ej: 1234567" />
+        </div>
+        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl shadow">
+          Confirmar y Reservar Nombre
+        </button>
+      </form>
+      <div id="msgReserva" class="text-xs text-center font-bold"></div>
+    </div>
+  </div>
+
+  <script>
+    let datosCartilla = null;
+
+    async function cargarCartilla() {
+      const res = await fetch('/api/raspadita/activa');
+      const data = await res.json();
+      const grid = document.getElementById('gridNombres');
+      grid.innerHTML = '';
+
+      if (!data.activa) {
+        document.getElementById('sinCartilla').classList.remove('hidden');
+        document.getElementById('infoPanel').classList.add('hidden');
+        return;
+      }
+
+      datosCartilla = data;
+      document.getElementById('sinCartilla').classList.add('hidden');
+      document.getElementById('infoPanel').classList.remove('hidden');
+      document.getElementById('tituloCartilla').textContent = data.titulo;
+      document.getElementById('premioCartilla').textContent = data.premio;
+      document.getElementById('precioCartilla').textContent = `${Number(data.precio).toLocaleString('es-PY')} Gs.`;
+      document.getElementById('ganadorCartilla').textContent = data.revelado ? `🏆 ${data.nombre_ganador}` : '🔒 OCULTO';
+
+      data.casillas.forEach(c => {
+        const libre = c.estado === 'Libre';
+        const aprobado = c.estado === 'Aprobado';
+        const btn = document.createElement('button');
+        btn.disabled = !libre;
+        btn.className = libre
+          ? 'bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-400 rounded-xl p-3 text-center transition'
+          : aprobado
+            ? 'bg-emerald-950/60 border border-emerald-600/50 rounded-xl p-3 text-center opacity-85 cursor-not-allowed'
+            : 'bg-amber-950/50 border border-amber-600/50 rounded-xl p-3 text-center opacity-85 cursor-not-allowed';
+
+        btn.innerHTML = `
+          <div class="font-black text-xs sm:text-sm ${libre ? 'text-white' : 'text-slate-300'}">${c.nombre_casilla}</div>
+          <div class="text-[10px] mt-1 font-bold ${libre ? 'text-emerald-400' : aprobado ? 'text-emerald-300' : 'text-amber-300'}">
+            ${libre ? 'DISPONIBLE' : aprobado ? `✅ ${c.comprador_nombre}` : `⏳ ${c.comprador_nombre}`}
+          </div>
+        `;
+        if (libre) {
+          btn.onclick = () => abrirModal(c);
+        }
+        grid.appendChild(btn);
+      });
+    }
+
+    function abrirModal(casilla) {
+      document.getElementById('casillaIdInput').value = casilla.id;
+      document.getElementById('nombreOculto').textContent = casilla.nombre_casilla;
+      document.getElementById('msgReserva').innerHTML = '';
+      document.getElementById('modalRaspar').classList.remove('hidden');
+      document.getElementById('modalRaspar').classList.add('flex');
+      iniciarCanvasRaspar();
+    }
+
+    function cerrarModal() {
+      document.getElementById('modalRaspar').classList.add('hidden');
+      document.getElementById('modalRaspar').classList.remove('flex');
+    }
+
+    function iniciarCanvasRaspar() {
+      const canvas = document.getElementById('canvasRaspar');
+      const ctx = canvas.getContext('2d');
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✨ RASPA AQUÍ ✨', canvas.width / 2, canvas.height / 2 + 6);
+
+      let raspando = false;
+      const raspar = (x, y) => {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(x, y, 22, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+          x: (clientX - rect.left) * (canvas.width / rect.width),
+          y: (clientY - rect.top) * (canvas.height / rect.height)
+        };
+      };
+
+      canvas.onmousedown = (e) => { raspando = true; const p = getPos(e); raspar(p.x, p.y); };
+      canvas.onmousemove = (e) => { if (!raspando) return; const p = getPos(e); raspar(p.x, p.y); };
+      window.onmouseup = () => { raspando = false; };
+
+      canvas.ontouchstart = (e) => { raspando = true; const p = getPos(e); raspar(p.x, p.y); };
+      canvas.ontouchmove = (e) => { if (!raspando) return; e.preventDefault(); const p = getPos(e); raspar(p.x, p.y); };
+      canvas.ontouchend = () => { raspando = false; };
+    }
+
+    document.getElementById('formReservar').onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        casilla_id: document.getElementById('casillaIdInput').value,
+        nombre: document.getElementById('inpNombre').value,
+        telefono: document.getElementById('inpTelefono').value,
+        cedula: document.getElementById('inpCedula').value
+      };
+
+      const res = await fetch('/api/raspadita/reservar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      const msgDiv = document.getElementById('msgReserva');
+
+      if (!res.ok) {
+        msgDiv.className = 'text-xs text-center font-bold text-rose-400';
+        msgDiv.textContent = data.error || 'Error al reservar.';
+        return;
+      }
+
+      const nomCasilla = document.getElementById('nombreOculto').textContent;
+      const textoWa = encodeURIComponent(`Hola! Reservé el nombre *${nomCasilla}* en la Raspadita de Juegos Patri. Mi nombre es ${payload.nombre}. Envío mi comprobante del BNF.`);
+      msgDiv.className = 'text-xs text-center font-bold text-emerald-400 space-y-2';
+      msgDiv.innerHTML = `
+        <p>${data.mensaje}</p>
+        <a href="https://wa.me/595987531881?text=${textoWa}" target="_blank"
+           class="inline-block mt-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl">
+          📲 Enviar Comprobante por WhatsApp
+        </a>
+      `;
+      cargarCartilla();
+    };
+
+    cargarCartilla();
+  </script>
+</body>
+</html>

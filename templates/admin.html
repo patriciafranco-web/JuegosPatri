@@ -348,6 +348,32 @@
             }
         }
 
+        async function difundirRaspaditaClientes() {
+            const resAct = await fetch('/api/raspadita/activa');
+            const rasp = await resAct.json();
+            if(!rasp || !rasp.activa) {
+                alert("No hay una cartilla activa para difundir.");
+                return;
+            }
+            const urlRasp = `${window.location.origin}/raspadita`;
+            const precioFmt = Number(rasp.precio || 0).toLocaleString('es-PY');
+            const mensaje = `🎲 *¡RASPADITA DE NOMBRES ACTIVA!* 🍀\n\n🏆 Premio: ${rasp.premio}\n💵 Valor por nombre: ${precioFmt} Gs.\n👉 Elegí tu nombre y raspá aquí: ${urlRasp}`;
+
+            if(!confirm("¿Enviar este aviso de la raspadita a todos los clientes registrados?")) return;
+
+            const res = await fetch('/api/admin/difusion-masiva', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ usuario: currentUser, password: currentPass, mensaje })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                alert(data.mensaje);
+            } else {
+                alert(data.error || "Error al difundir.");
+            }
+        }
+
         function renderRaspaditaAdmin(rasp) {
             const div = document.getElementById('estadoRaspaditaAdmin');
             if(!rasp) {
@@ -355,15 +381,28 @@
                 return;
             }
             const ocupadas = rasp.casillas.filter(c => c.estado !== 'Libre');
+            const urlRasp = `${window.location.origin}/raspadita`;
+            const precioFmt = Number(rasp.precio || 0).toLocaleString('es-PY');
+            const textoPromo = `🎲 *¡RASPADITA DE NOMBRES ACTIVA EN JUEGOS PATRI!* 🍀\n\n🏆 *Premio:* ${rasp.premio}\n💵 *Valor por nombre:* ${precioFmt} Gs.\n📋 *Casillas:* ${rasp.casillas.length} nombres\n\n👉 Elegí tu nombre y raspá aquí: ${urlRasp}`;
+            const waLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(textoPromo)}`;
+
             div.innerHTML = `
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-3">
                     <div>
                         <p class="font-bold text-purple-300">${rasp.titulo} — Premio: <span class="text-amber-400">${rasp.premio}</span></p>
                         <p class="text-xs text-slate-400">Ocupados: ${ocupadas.length} / ${rasp.casillas.length} | Ganador secreto: <strong class="text-emerald-400">${rasp.nombre_ganador}</strong> (${rasp.revelado ? 'Revelado' : 'Oculto'})</p>
                     </div>
-                    <button onclick="revelarGanadorRasp(${rasp.id})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl">
-                        🏆 Revelar Ganador
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                        <a href="${waLink}" target="_blank" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition">
+                            📲 Compartir en WhatsApp
+                        </a>
+                        <button type="button" onclick="difundirRaspaditaClientes()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition">
+                            📢 Enviar a Clientes
+                        </button>
+                        <button type="button" onclick="revelarGanadorRasp(${rasp.id})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl transition">
+                            🏆 Revelar Ganador
+                        </button>
+                    </div>
                 </div>
                 <div class="space-y-2">
                     ${ocupadas.length === 0 ? '<p class="text-xs text-slate-400">Aún no hay nombres reservados o aprobados.</p>' : ocupadas.map(c => `
@@ -372,8 +411,8 @@
                                 <strong class="text-white">${c.nombre_casilla}</strong> → <span class="text-amber-300">${c.comprador_nombre}</span> (${c.comprador_telefono || 'sin tel'}) • <span class="${c.estado === 'Aprobado' ? 'text-emerald-400' : 'text-amber-400'} font-bold">${c.estado}</span>
                             </div>
                             <div class="flex gap-2">
-                                ${c.estado !== 'Aprobado' ? `<button onclick="aprobarCasillaRasp(${c.id})" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded-lg font-bold">Aprobar</button>` : ''}
-                                <button onclick="liberarCasillaRasp(${c.id})" class="bg-rose-600 hover:bg-rose-500 px-3 py-1 rounded-lg font-bold">Liberar</button>
+                                ${c.estado !== 'Aprobado' ? `<button type="button" onclick="aprobarCasillaRasp(${c.id})" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded-lg font-bold">Aprobar</button>` : ''}
+                                <button type="button" onclick="liberarCasillaRasp(${c.id})" class="bg-rose-600 hover:bg-rose-500 px-3 py-1 rounded-lg font-bold">Liberar</button>
                             </div>
                         </div>
                     `).join('')}

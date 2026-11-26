@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import random
 import re
 import shutil
 import sqlite3
@@ -56,12 +57,22 @@ else:
         pass
 
 DB_PATH = os.path.join(CARPETA_DATOS, "juegos_patri.db")
-BACKUP_PATH = os.path.join(CARPETA_LOCAL, "juegos_patri_respaldo.db")
+CARPETA_RESPALDOS = os.path.join(CARPETA_DATOS, "respaldos")
+os.makedirs(CARPETA_RESPALDOS, exist_ok=True)
+BACKUP_PATH = os.path.join(CARPETA_RESPALDOS, "juegos_patri_respaldo.db")
 JP_UPLOAD_DIR = os.path.join(CARPETA_DATOS, "uploads_jp")
 os.makedirs(JP_UPLOAD_DIR, exist_ok=True)
 
 bloqueo_compra = threading.Lock()
 SESIONES_WHATSAPP = {}
+
+NOMBRES_DEFECTO_30 = [
+    "JORGELINA", "ANGELICA", "DIANA", "DOROTEA", "MERCEDES", "JOANA",
+    "CLOTILDE", "REGINA", "INES", "SORAIDA", "RUTY", "ADRIANA",
+    "FATIMA", "ENEIDE", "HELENA", "NILZA", "GISEL", "CLAUDELINA",
+    "ANDRESA", "RAMONA", "NELIDA", "ANDREA", "IVONE", "DEISI",
+    "KATIA", "CARLINA", "ESTELA", "LIDIA", "DALVA", "SANDRA"
+]
 
 
 def formatear_telefono(telefono):
@@ -121,11 +132,11 @@ def enviar_flyer_local_whatsapp(telefono, caption, id_inst=None, token_inst=None
     enviar_mensaje_whatsapp(telefono, caption, id_inst, token_inst)
 
 
-def enviar_ticket_directo(telefono, boleto_id, host_url, caption):
+def enviar_ticket_directo(telefono, boleto_id, host_url, caption, sorteo_id=None):
     tel_formateado = formatear_telefono(telefono)
     enviar_mensaje_whatsapp(telefono, "✅ *¡Pago verificado en BNF!* Generando tu boleto oficial con QR...")
 
-    output = crear_imagen_boleto_memoria(boleto_id, host_url)
+    output = crear_imagen_boleto_memoria(boleto_id, host_url, sorteo_id=sorteo_id)
     if not output:
         return
 
@@ -220,6 +231,33 @@ def init_db():
             sorteo_id INTEGER,
             numero INTEGER,
             PRIMARY KEY (sorteo_id, numero)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS raspaditas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            premio TEXT NOT NULL,
+            precio INTEGER NOT NULL,
+            nombre_ganador TEXT NOT NULL,
+            revelado INTEGER DEFAULT 0,
+            estado TEXT DEFAULT 'Activa',
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS raspadita_casillas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            raspadita_id INTEGER NOT NULL,
+            nombre_casilla TEXT NOT NULL,
+            comprador_nombre TEXT DEFAULT '',
+            comprador_telefono TEXT DEFAULT '',
+            comprador_cedula TEXT DEFAULT '',
+            estado TEXT DEFAULT 'Libre',
+            raspado INTEGER DEFAULT 0,
+            FOREIGN KEY (raspadita_id) REFERENCES raspaditas(id) ON DELETE CASCADE
         )
     """)
 
@@ -428,6 +466,9 @@ DOBLE_ACCESO_HTML = """
       <a href="/" class="block w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 px-4 rounded-xl shadow">
         🎟️ Módulo de Sorteo
       </a>
+      <a href="/raspadita" class="block w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-3.5 px-4 rounded-xl shadow">
+        🎲 Raspadita de Nombres (Juego Loco)
+      </a>
       <a href="/cobrador/duena" class="block w-full bg-slate-900 hover:bg-slate-800 text-amber-400 font-black py-3.5 px-4 rounded-xl shadow">
         👑 Modo Dueña (Mesas y Rutas)
       </a>
@@ -562,6 +603,11 @@ JP_QR_HTML = """
 """
 
 
+def verificar_admin(data):
+    data = data or {}
+    return data.get("usuario") in ADMIN_USERS and ADMIN_USERS[data.get("usuario")] == data.get("password")
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -572,10 +618,27 @@ def admin_panel():
     return render_template("admin.html")
 
 
+@app.route("/raspadita")
+def vista_raspadita():
+    return render_template("raspadita.html")
+
+
 @app.route("/ruleta")
 def vista_ruleta():
+    solo_juego_loco = request.args.get("juego_loco") == "1"
+    sorteo_id = request.args.get("sorteo_id", type=int)
+
     conn = get_db()
-    boletos_aprobados = conn.execute("SELECT id, nombre FROM boletos WHERE estado = 'Aprobado' ORDER BY id ASC").fetchall()
+    sql = "SELECT id, nombre FROM boletos WHERE estado = 'Aprobado'"
+    params = []
+    if solo_juego_loco:
+        sql += " AND es_juego_loco = 1"
+    if sorteo_id:
+        sql += " AND sorteo_id = ?"
+        params.append(sorteo_id)
+    sql += " ORDER BY id ASC"
+
+    boletos_aprobados = conn.execute(sql, params).fetchall()
     conn.close()
     participantes = [{"id": b["id"], "nombre": b["nombre"]} for b in boletos_aprobados]
     return render_template("ruleta.html", participantes=json.dumps(participantes))
@@ -642,7 +705,7 @@ def obtener_sorteos():
 
 @app.route("/api/comprar", methods=["POST"])
 def comprar():
-    data = request.json
+    data = request.json or {}
     sorteo_id = int(data.get("sorteo_id", 1))
     nombre = data.get("nombre")
     telefono = data.get("telefono")
@@ -650,9 +713,8 @@ def comprar():
     cantidad = int(data.get("cantidad", 1))
     metodo_pago = data.get("metodo_pago", "Transferencia BNF")
     detalle_pago = data.get("detalle_pago", "BNF Patricia Franco")
-    vendedor = data.get("vendedor", "Directo").strip()
-    if not vendedor:
-        vendedor = "Directo"
+    es_juego_loco = 1 if data.get("es_juego_loco") in (1, True, "1", "true") else 0
+    vendedor = str(data.get("vendedor", "Directo")).strip() or "Directo"
 
     if not nombre or not telefono or not cedula or cantidad < 1:
         return jsonify({"error": "Todos los campos son obligatorios."}), 400
@@ -690,8 +752,8 @@ def comprar():
         for num_boleto in nuevos_boletos_ids:
             cursor.execute("""
                 INSERT INTO boletos (id, sorteo_id, lote_id, nombre, telefono, cedula, cantidad_lote, imagen_comprobante, metodo_pago, detalle_pago, estado, impreso, es_juego_loco, vendedor)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', 0, 0, ?)
-            """, (num_boleto, sorteo_id, current_lote, nombre, telefono, cedula, cantidad, "", metodo_pago, detalle_pago, vendedor))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', 0, ?, ?)
+            """, (num_boleto, sorteo_id, current_lote, nombre, telefono, cedula, cantidad, "", metodo_pago, detalle_pago, es_juego_loco, vendedor))
 
         conn.commit()
         conn.close()
@@ -712,7 +774,7 @@ def comprar():
 
 @app.route("/api/subir-comprobante", methods=["POST"])
 def subir_comprobante():
-    data = request.json
+    data = request.json or {}
     lote_id = data.get("lote_id")
     imagen_comprobante = data.get("imagen_comprobante", "")
 
@@ -927,7 +989,7 @@ def webhook_whatsapp():
                 """
                 try:
                     message = client_anthropic.messages.create(
-                        model="claude-sonnet-5-5",
+                        model="claude-sonnet-4-5",
                         max_tokens=300,
                         messages=[{"role": "user", "content": prompt_asistente}]
                     )
@@ -1010,9 +1072,13 @@ def webhook_whatsapp():
     return jsonify({"status": "ok"}), 200
 
 
-def crear_imagen_boleto_memoria(boleto_id, host_url):
+def crear_imagen_boleto_memoria(boleto_id, host_url, sorteo_id=None):
     conn = get_db()
-    boleto = conn.execute("SELECT * FROM boletos WHERE id = ?", (boleto_id,)).fetchone()
+    if sorteo_id:
+        boleto = conn.execute("SELECT * FROM boletos WHERE id = ? AND sorteo_id = ?", (boleto_id, sorteo_id)).fetchone()
+    else:
+        boleto = conn.execute("SELECT * FROM boletos WHERE id = ? ORDER BY sorteo_id DESC LIMIT 1", (boleto_id,)).fetchone()
+
     if not boleto:
         conn.close()
         return None
@@ -1046,7 +1112,7 @@ def crear_imagen_boleto_memoria(boleto_id, host_url):
     d.line([(20, 240), (ancho - 20, 240)], fill="black", width=1)
 
     url_segura = host_url.rstrip("/").replace("http://", "https://")
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={url_segura}/validar/{boleto['id']}"
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={url_segura}/validar/{boleto['id']}?sorteo_id={boleto['sorteo_id']}"
 
     try:
         res_qr = requests.get(qr_url)
@@ -1064,7 +1130,8 @@ def crear_imagen_boleto_memoria(boleto_id, host_url):
 
 @app.route("/api/ticket-imagen/<int:boleto_id>")
 def obtener_ticket_imagen(boleto_id):
-    output = crear_imagen_boleto_memoria(boleto_id, request.host_url)
+    sorteo_id = request.args.get("sorteo_id", type=int)
+    output = crear_imagen_boleto_memoria(boleto_id, request.host_url, sorteo_id=sorteo_id)
     if not output:
         return "Boleto no encontrado", 404
     return send_file(output, mimetype="image/png")
@@ -1072,8 +1139,13 @@ def obtener_ticket_imagen(boleto_id):
 
 @app.route("/validar/<int:boleto_id>")
 def validar_boleto_qr(boleto_id):
+    sorteo_id = request.args.get("sorteo_id", type=int)
     conn = get_db()
-    boleto = conn.execute("SELECT * FROM boletos WHERE id = ?", (boleto_id,)).fetchone()
+    if sorteo_id:
+        boleto = conn.execute("SELECT * FROM boletos WHERE id = ? AND sorteo_id = ?", (boleto_id, sorteo_id)).fetchone()
+    else:
+        boleto = conn.execute("SELECT * FROM boletos WHERE id = ? ORDER BY sorteo_id DESC LIMIT 1", (boleto_id,)).fetchone()
+
     if not boleto:
         conn.close()
         return "<h3>Boleto no encontrado</h3>", 404
@@ -1099,10 +1171,6 @@ def validar_boleto_qr(boleto_id):
     """
 
 
-def verificar_admin(data):
-    return data.get("usuario") in ADMIN_USERS and ADMIN_USERS[data.get("usuario")] == data.get("password")
-
-
 @app.route("/api/admin/datos", methods=["POST"])
 def admin_datos():
     if not verificar_admin(request.json):
@@ -1111,7 +1179,7 @@ def admin_datos():
     with bloqueo_compra:
         conn_fix = get_db()
         sorteos = conn_fix.execute("SELECT * FROM sorteos").fetchall()
-        boletos = conn_fix.execute("SELECT * FROM boletos ORDER BY id ASC").fetchall()
+        boletos = conn_fix.execute("SELECT * FROM boletos ORDER BY sorteo_id ASC, id ASC").fetchall()
         total_clientes = conn_fix.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
 
         top = conn_fix.execute("""
@@ -1128,6 +1196,24 @@ def admin_datos():
             FROM boletos
             GROUP BY vendedor
         """).fetchall()
+
+        rasp = conn_fix.execute("SELECT * FROM raspaditas WHERE estado = 'Activa' ORDER BY id DESC LIMIT 1").fetchone()
+        rasp_data = None
+        if rasp:
+            casillas = conn_fix.execute(
+                "SELECT * FROM raspadita_casillas WHERE raspadita_id = ? ORDER BY id ASC",
+                (rasp["id"],)
+            ).fetchall()
+            rasp_data = {
+                "id": rasp["id"],
+                "titulo": rasp["titulo"],
+                "premio": rasp["premio"],
+                "precio": rasp["precio"],
+                "revelado": bool(rasp["revelado"]),
+                "nombre_ganador": rasp["nombre_ganador"],
+                "casillas": [dict(c) for c in casillas]
+            }
+
         conn_fix.close()
 
     return jsonify({
@@ -1135,13 +1221,14 @@ def admin_datos():
         "boletos": [dict(b) for b in boletos],
         "total_clientes": total_clientes,
         "top_compradores": [dict(t) for t in top],
-        "reporte_vendedores": [dict(v) for v in vendedores]
+        "reporte_vendedores": [dict(v) for v in vendedores],
+        "raspadita": rasp_data
     })
 
 
 @app.route("/api/admin/crear-sorteo", methods=["POST"])
 def admin_crear_sorteo():
-    data = request.json
+    data = request.json or {}
     if not verificar_admin(data):
         return jsonify({"error": "No autorizado"}), 401
     with bloqueo_compra:
@@ -1162,7 +1249,7 @@ def admin_crear_sorteo():
 
 @app.route("/api/admin/finalizar-sorteo/<int:sorteo_id>", methods=["POST"])
 def admin_finalizar_sorteo(sorteo_id):
-    data = request.json
+    data = request.json or {}
     if not verificar_admin(data):
         return jsonify({"error": "No autorizado"}), 401
     with bloqueo_compra:
@@ -1201,7 +1288,7 @@ def admin_aprobar_lote(lote_id):
             precio = sorteo["precio"] if sorteo else 2000
             titulo = sorteo["titulo"] if sorteo else "Juegos Patri"
             caption = f"✨ *¡Pago Verificado en BNF y Boleto Emitido!*\n\nCLIENTE: {b['nombre']}\nCI: {b['cedula']}\nEDICION: {titulo}\nVALOR: Gs. {precio:,}\nNRO: #{str(b['id']).zfill(5)}\n\n🍀 *¡Participas automáticamente en los Juegos Locos de Juegos Patri!*"
-            enviar_ticket_directo(b["telefono"], b["id"], host_actual, caption)
+            enviar_ticket_directo(b["telefono"], b["id"], host_actual, caption, sorteo_id=b["sorteo_id"])
 
     return jsonify({"mensaje": f"¡Lote aprobado con éxito ({len(boletos_lote)} boletos)!"}), 200
 
@@ -1294,16 +1381,178 @@ def admin_eliminar_lote(lote_id):
     return jsonify({"mensaje": f"¡Lote #{lote_id} eliminado y números liberados!"}), 200
 
 
+# ==========================================
+# RUTAS DE RASPADITA DE NOMBRES
+# ==========================================
+@app.route("/api/raspadita/activa", methods=["GET"])
+def api_raspadita_activa():
+    conn = get_db()
+    rasp = conn.execute("SELECT * FROM raspaditas WHERE estado = 'Activa' ORDER BY id DESC LIMIT 1").fetchone()
+    if not rasp:
+        conn.close()
+        return jsonify({"activa": False}), 200
+
+    casillas = conn.execute(
+        "SELECT id, nombre_casilla, comprador_nombre, estado, raspado FROM raspadita_casillas WHERE raspadita_id = ? ORDER BY id ASC",
+        (rasp["id"],)
+    ).fetchall()
+    conn.close()
+
+    return jsonify({
+        "activa": True,
+        "id": rasp["id"],
+        "titulo": rasp["titulo"],
+        "premio": rasp["premio"],
+        "precio": rasp["precio"],
+        "revelado": bool(rasp["revelado"]),
+        "nombre_ganador": rasp["nombre_ganador"] if rasp["revelado"] else "OCULTO HASTA COMPLETAR",
+        "casillas": [dict(c) for c in casillas]
+    }), 200
+
+
+@app.route("/api/raspadita/reservar", methods=["POST"])
+def api_raspadita_reservar():
+    data = request.json or {}
+    casilla_id = int(data.get("casilla_id", 0))
+    nombre = str(data.get("nombre", "")).strip()
+    telefono = str(data.get("telefono", "")).strip()
+    cedula = str(data.get("cedula", "")).strip()
+
+    if not casilla_id or not nombre or not telefono:
+        return jsonify({"error": "Completa tu nombre y teléfono para reservar el casillero."}), 400
+
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+        casilla = cursor.execute("SELECT * FROM raspadita_casillas WHERE id = ?", (casilla_id,)).fetchone()
+        if not casilla:
+            conn.close()
+            return jsonify({"error": "Casillero no encontrado."}), 404
+        if casilla["estado"] != "Libre":
+            conn.close()
+            return jsonify({"error": "Ese nombre ya fue reservado por otra persona."}), 400
+
+        cursor.execute("""
+            UPDATE raspadita_casillas
+            SET comprador_nombre = ?, comprador_telefono = ?, comprador_cedula = ?, estado = 'Pendiente', raspado = 1
+            WHERE id = ?
+        """, (nombre, telefono, cedula, casilla_id))
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({
+        "ok": True,
+        "mensaje": f"¡Reservaste el nombre {casilla['nombre_casilla']}! Envía tu comprobante del BNF para confirmar."
+    }), 200
+
+
+@app.route("/api/admin/raspadita/crear", methods=["POST"])
+def admin_raspadita_crear():
+    data = request.json or {}
+    if not verificar_admin(data):
+        return jsonify({"error": "No autorizado"}), 401
+
+    titulo = str(data.get("titulo") or "Raspadita de Nombres - Juego Loco").strip()
+    premio = str(data.get("premio") or "60.000 Gs. en efectivo").strip()
+    precio = int(data.get("precio") or 5000)
+    cantidad = int(data.get("cantidad") or 20)
+    nombres_custom = data.get("nombres")
+
+    if isinstance(nombres_custom, list) and len(nombres_custom) >= 5:
+        lista_nombres = [str(n).strip().upper() for n in nombres_custom if str(n).strip()]
+    else:
+        lista_nombres = NOMBRES_DEFECTO_30[:max(10, min(cantidad, 30))]
+
+    ganador_secreto = random.choice(lista_nombres)
+
+    with bloqueo_compra:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE raspaditas SET estado = 'Finalizada' WHERE estado = 'Activa'")
+        cursor.execute("""
+            INSERT INTO raspaditas (titulo, premio, precio, nombre_ganador, revelado, estado)
+            VALUES (?, ?, ?, ?, 0, 'Activa')
+        """, (titulo, premio, precio, ganador_secreto))
+        rasp_id = cursor.lastrowid
+
+        for nom in lista_nombres:
+            cursor.execute("""
+                INSERT INTO raspadita_casillas (raspadita_id, nombre_casilla, estado, raspado)
+                VALUES (?, ?, 'Libre', 0)
+            """, (rasp_id, nom))
+
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+
+    return jsonify({"ok": True, "mensaje": f"Cartilla creada con {len(lista_nombres)} nombres.", "raspadita_id": rasp_id}), 200
+
+
+@app.route("/api/admin/raspadita/aprobar-casilla/<int:casilla_id>", methods=["POST"])
+def admin_raspadita_aprobar(casilla_id):
+    data = request.json or {}
+    if not verificar_admin(data):
+        return jsonify({"error": "No autorizado"}), 401
+
+    with bloqueo_compra:
+        conn = get_db()
+        conn.execute("UPDATE raspadita_casillas SET estado = 'Aprobado' WHERE id = ?", (casilla_id,))
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+    return jsonify({"ok": True, "mensaje": "Casilla aprobada."}), 200
+
+
+@app.route("/api/admin/raspadita/liberar-casilla/<int:casilla_id>", methods=["POST"])
+def admin_raspadita_liberar(casilla_id):
+    data = request.json or {}
+    if not verificar_admin(data):
+        return jsonify({"error": "No autorizado"}), 401
+
+    with bloqueo_compra:
+        conn = get_db()
+        conn.execute("""
+            UPDATE raspadita_casillas
+            SET comprador_nombre = '', comprador_telefono = '', comprador_cedula = '', estado = 'Libre', raspado = 0
+            WHERE id = ?
+        """, (casilla_id,))
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+    return jsonify({"ok": True, "mensaje": "Casilla liberada nuevamente."}), 200
+
+
+@app.route("/api/admin/raspadita/revelar/<int:raspadita_id>", methods=["POST"])
+def admin_raspadita_revelar(raspadita_id):
+    data = request.json or {}
+    if not verificar_admin(data):
+        return jsonify({"error": "No autorizado"}), 401
+
+    with bloqueo_compra:
+        conn = get_db()
+        conn.execute("UPDATE raspaditas SET revelado = 1 WHERE id = ?", (raspadita_id,))
+        rasp = conn.execute("SELECT nombre_ganador FROM raspaditas WHERE id = ?", (raspadita_id,)).fetchone()
+        conn.commit()
+        conn.close()
+        respaldar_base_datos()
+    return jsonify({"ok": True, "nombre_ganador": rasp["nombre_ganador"] if rasp else ""}), 200
+
+
+# ==========================================
+# RUTAS DE IMPRESIÓN TÉRMICA LOCAL
+# ==========================================
 @app.route("/api/pendientes-impresion", methods=["GET"])
 def obtener_pendientes_impresion():
     conn = get_db()
-    boletos_aprobados = conn.execute("SELECT * FROM boletos WHERE estado = 'Aprobado' AND impreso = 0 ORDER BY id ASC").fetchall()
+    boletos_aprobados = conn.execute("SELECT * FROM boletos WHERE estado = 'Aprobado' AND impreso = 0 ORDER BY sorteo_id ASC, id ASC").fetchall()
 
     pendientes = []
     for b in boletos_aprobados:
         sorteo = conn.execute("SELECT titulo FROM sorteos WHERE id = ?", (b["sorteo_id"],)).fetchone()
         pendientes.append({
             "id": b["id"],
+            "sorteo_id": b["sorteo_id"],
             "lote_id": b["lote_id"],
             "sorteo_titulo": sorteo["titulo"] if sorteo else "Sorteo",
             "nombre": b["nombre"],
@@ -1317,8 +1566,12 @@ def obtener_pendientes_impresion():
 
 @app.route("/api/marcar-impreso/<int:boleto_id>", methods=["POST"])
 def marcar_como_impreso(boleto_id):
+    sorteo_id = request.args.get("sorteo_id", type=int)
     conn = get_db()
-    conn.execute("UPDATE boletos SET impreso = 1 WHERE id = ?", (boleto_id,))
+    if sorteo_id:
+        conn.execute("UPDATE boletos SET impreso = 1 WHERE id = ? AND sorteo_id = ?", (boleto_id, sorteo_id))
+    else:
+        conn.execute("UPDATE boletos SET impreso = 1 WHERE id = ?", (boleto_id,))
     conn.commit()
     conn.close()
     respaldar_base_datos()
@@ -1327,11 +1580,15 @@ def marcar_como_impreso(boleto_id):
 
 @app.route("/api/reimprimir/<int:boleto_id>", methods=["POST"])
 def api_reimprimir(boleto_id):
-    data = request.json
+    data = request.json or {}
     if not verificar_admin(data):
         return jsonify({"error": "No autorizado"}), 401
+    sorteo_id = data.get("sorteo_id")
     conn = get_db()
-    conn.execute("UPDATE boletos SET impreso = 0 WHERE id = ?", (boleto_id,))
+    if sorteo_id:
+        conn.execute("UPDATE boletos SET impreso = 0 WHERE id = ? AND sorteo_id = ?", (boleto_id, sorteo_id))
+    else:
+        conn.execute("UPDATE boletos SET impreso = 0 WHERE id = ?", (boleto_id,))
     conn.commit()
     conn.close()
     respaldar_base_datos()
@@ -1340,7 +1597,7 @@ def api_reimprimir(boleto_id):
 
 @app.route("/api/admin/limpiar-pruebas", methods=["POST"])
 def limpiar_pruebas():
-    data = request.json
+    data = request.json or {}
     if not verificar_admin(data):
         return jsonify({"error": "No autorizado"}), 401
     with bloqueo_compra:

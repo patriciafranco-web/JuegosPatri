@@ -28,12 +28,15 @@
 
     <!-- PANEL PRINCIPAL -->
     <div id="adminPanel" class="max-w-6xl mx-auto space-y-8 hidden">
-        <header class="flex justify-between items-center border-b border-slate-800 pb-4">
+        <header class="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
             <div>
                 <h1 class="text-2xl font-black text-amber-400">Juegos Patri - Panel de Control 🎱</h1>
-                <p class="text-xs text-slate-400">Sorteo Mesa de Billar + Juegos Locos (BNF: Patricia Franco)</p>
+                <p class="text-xs text-slate-400">Sorteo Mesa de Billar + Juegos Locos y Raspadita (BNF: Patricia Franco)</p>
             </div>
-            <button onclick="cerrarSesion()" class="bg-rose-600 hover:bg-rose-500 text-xs font-bold px-4 py-2 rounded-xl transition">Cerrar Sesión</button>
+            <div class="flex items-center gap-2">
+                <a href="/raspadita" target="_blank" class="bg-purple-600 hover:bg-purple-500 text-xs font-bold px-4 py-2 rounded-xl transition">Ver Raspadita 🎲</a>
+                <button onclick="cerrarSesion()" class="bg-rose-600 hover:bg-rose-500 text-xs font-bold px-4 py-2 rounded-xl transition">Cerrar Sesión</button>
+            </div>
         </header>
 
         <!-- HERRAMIENTAS DE MARKETING Y JUEGOS LOCOS -->
@@ -54,9 +57,56 @@
                     <h2 class="text-lg font-bold text-amber-300">🎡 Sorteo en Vivo (Ruleta)</h2>
                     <p class="text-xs text-slate-400">Abre la pantalla interactiva para realizar los sorteos de los Juegos Locos frente a tus clientes.</p>
                 </div>
-                <a href="/ruleta" target="_blank" class="w-full bg-blue-600 hover:bg-blue-500 font-bold py-3 rounded-xl text-white transition text-sm shadow-lg text-center block">
-                    Abrir Ruleta de la Suerte 🎲
-                </a>
+                <div class="grid grid-cols-2 gap-2">
+                    <a href="/ruleta" target="_blank" class="bg-blue-600 hover:bg-blue-500 font-bold py-3 rounded-xl text-white transition text-xs sm:text-sm shadow-lg text-center block">
+                        Ruleta General 🎲
+                    </a>
+                    <a href="/ruleta?juego_loco=1" target="_blank" class="bg-amber-600 hover:bg-amber-500 font-bold py-3 rounded-xl text-white transition text-xs sm:text-sm shadow-lg text-center block">
+                        Ruleta Juegos Locos ⚡
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- MÓDULO RASPADITA DE NOMBRES -->
+        <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-purple-500/40 space-y-5">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+                <div>
+                    <h2 class="text-lg font-bold text-purple-300">🎲 Raspadita de Nombres (20 / 30 Casillas)</h2>
+                    <p class="text-xs text-slate-400">Crea cartillas rápidas, aprueba o libera casilleros y revela el nombre ganador cuando corresponda.</p>
+                </div>
+                <a href="/raspadita" target="_blank" class="text-xs font-bold text-amber-400 hover:underline">Abrir vista pública →</a>
+            </div>
+
+            <form id="formCrearRaspadita" class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-900/70 p-4 rounded-xl border border-slate-700">
+                <div>
+                    <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Título</label>
+                    <input type="text" id="raspTitulo" value="Raspadita Express Juegos Patri" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Premio</label>
+                    <input type="text" id="raspPremio" value="60.000 Gs. en efectivo" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Precio (Gs.)</label>
+                    <input type="number" id="raspPrecio" value="5000" min="1000" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Cantidad Nombres</label>
+                    <select id="raspCantidad" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-xs">
+                        <option value="20" selected>20 nombres</option>
+                        <option value="30">30 nombres</option>
+                    </select>
+                </div>
+                <div class="sm:col-span-4">
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 font-bold py-2.5 rounded-xl text-white transition text-xs sm:text-sm">
+                        Crear Nueva Cartilla de Raspadita
+                    </button>
+                </div>
+            </form>
+
+            <div id="estadoRaspaditaAdmin" class="space-y-3 text-sm">
+                <p class="text-slate-400 text-xs">Cargando estado de raspadita...</p>
             </div>
         </div>
 
@@ -107,7 +157,11 @@
             <h2 class="text-lg font-bold mb-2 text-amber-300">🎟️ Carga Manual de Boletos (Solo Impresión)</h2>
             <p class="text-xs text-slate-400 mb-4">Registra boletos antiguos o manuales (ej. del 1 al 7) para que pasen directo a la cola de impresión térmica, sin enviar mensajes de WhatsApp.</p>
             
-            <form id="formCargaManual" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <form id="formCargaManual" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Sorteo ID</label>
+                    <input type="number" id="manualSorteoId" required value="1" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
+                </div>
                 <div>
                     <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Nombre del Cliente</label>
                     <input type="text" id="manualNombre" required placeholder="Ej: Amanda Rodriguez" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
@@ -118,7 +172,7 @@
                 </div>
                 <div>
                     <label class="block text-xs uppercase font-semibold text-slate-400 mb-1">Número Inicial (Opcional)</label>
-                    <input type="number" id="manualInicio" placeholder="Ej: 1 (dejar vacío para automático)" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
+                    <input type="number" id="manualInicio" placeholder="Ej: 1 (vacío = auto)" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-sm">
                 </div>
                 <div class="flex items-end">
                     <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 font-bold py-3 rounded-xl text-white transition text-sm">Cargar para Imprimir</button>
@@ -237,6 +291,96 @@
             }
         });
 
+        // CREAR RASPADITA
+        document.getElementById('formCrearRaspadita').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const res = await fetch('/api/admin/raspadita/crear', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    usuario: currentUser,
+                    password: currentPass,
+                    titulo: document.getElementById('raspTitulo').value,
+                    premio: document.getElementById('raspPremio').value,
+                    precio: parseInt(document.getElementById('raspPrecio').value),
+                    cantidad: parseInt(document.getElementById('raspCantidad').value)
+                })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                alert(data.mensaje);
+                cargarDatosAdmin();
+            } else {
+                alert(data.error || "Error al crear cartilla.");
+            }
+        });
+
+        async function aprobarCasillaRasp(id) {
+            const res = await fetch(`/api/admin/raspadita/aprobar-casilla/${id}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ usuario: currentUser, password: currentPass })
+            });
+            if(res.ok) cargarDatosAdmin();
+        }
+
+        async function liberarCasillaRasp(id) {
+            if(!confirm("¿Liberar esta casilla para que vuelva a estar disponible?")) return;
+            const res = await fetch(`/api/admin/raspadita/liberar-casilla/${id}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ usuario: currentUser, password: currentPass })
+            });
+            if(res.ok) cargarDatosAdmin();
+        }
+
+        async function revelarGanadorRasp(raspId) {
+            if(!confirm("¿Revelar el nombre ganador de esta raspadita?")) return;
+            const res = await fetch(`/api/admin/raspadita/revelar/${raspId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ usuario: currentUser, password: currentPass })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                alert(`🏆 Nombre ganador revelado: ${data.nombre_ganador}`);
+                cargarDatosAdmin();
+            }
+        }
+
+        function renderRaspaditaAdmin(rasp) {
+            const div = document.getElementById('estadoRaspaditaAdmin');
+            if(!rasp) {
+                div.innerHTML = `<p class="text-slate-400 text-xs">No hay ninguna cartilla activa en este momento.</p>`;
+                return;
+            }
+            const ocupadas = rasp.casillas.filter(c => c.estado !== 'Libre');
+            div.innerHTML = `
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                        <p class="font-bold text-purple-300">${rasp.titulo} — Premio: <span class="text-amber-400">${rasp.premio}</span></p>
+                        <p class="text-xs text-slate-400">Ocupados: ${ocupadas.length} / ${rasp.casillas.length} | Ganador secreto: <strong class="text-emerald-400">${rasp.nombre_ganador}</strong> (${rasp.revelado ? 'Revelado' : 'Oculto'})</p>
+                    </div>
+                    <button onclick="revelarGanadorRasp(${rasp.id})" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl">
+                        🏆 Revelar Ganador
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    ${ocupadas.length === 0 ? '<p class="text-xs text-slate-400">Aún no hay nombres reservados o aprobados.</p>' : ocupadas.map(c => `
+                        <div class="bg-slate-900/70 p-3 rounded-xl border border-slate-800 flex flex-wrap justify-between items-center gap-2 text-xs">
+                            <div>
+                                <strong class="text-white">${c.nombre_casilla}</strong> → <span class="text-amber-300">${c.comprador_nombre}</span> (${c.comprador_telefono || 'sin tel'}) • <span class="${c.estado === 'Aprobado' ? 'text-emerald-400' : 'text-amber-400'} font-bold">${c.estado}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                ${c.estado !== 'Aprobado' ? `<button onclick="aprobarCasillaRasp(${c.id})" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded-lg font-bold">Aprobar</button>` : ''}
+                                <button onclick="liberarCasillaRasp(${c.id})" class="bg-rose-600 hover:bg-rose-500 px-3 py-1 rounded-lg font-bold">Liberar</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         // SCRIPT CARGA MANUAL SILENCIOSA
         document.getElementById('formCargaManual').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -247,7 +391,7 @@
             const payload = {
                 usuario: currentUser,
                 password: currentPass,
-                sorteo_id: 1,
+                sorteo_id: parseInt(document.getElementById('manualSorteoId').value) || 1,
                 nombre: document.getElementById('manualNombre').value,
                 cantidad: parseInt(document.getElementById('manualCantidad').value),
                 inicio_personalizado: document.getElementById('manualInicio').value ? parseInt(document.getElementById('manualInicio').value) : null
@@ -345,6 +489,8 @@
             });
             if(res.ok) {
                 const data = await res.json();
+                renderRaspaditaAdmin(data.raspadita);
+
                 const estadisticasSorteos = {};
                 data.sorteos.forEach(s => {
                     estadisticasSorteos[s.id] = { ...s, aprobadosCount: 0, recaudacion: 0 };
@@ -367,7 +513,7 @@
                     divSorteos.innerHTML += `
                         <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center text-sm">
                             <div>
-                                <p class="font-bold text-amber-400">${s.titulo}</p>
+                                <p class="font-bold text-amber-400">#${s.id} - ${s.titulo}</p>
                                 <p class="text-xs text-slate-400">Aprobados: ${s.aprobadosCount} | Límite: ${s.limite_boletos}</p>
                                 <p class="text-sm font-extrabold text-emerald-400 mt-1">Gs. ${s.recaudacion.toLocaleString()}</p>
                                 <span class="inline-block mt-2 px-2.5 py-0.5 rounded-lg text-xs font-bold ${s.estado === 'Activo' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">${s.estado}</span>
@@ -455,7 +601,7 @@
                                 <td class="p-3">${estadoBadge}</td>
                                 <td class="p-3 flex items-center space-x-3">
                                     ${impresoHtml}
-                                    <button onclick="reimprimirBoleto(${b.id})" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 px-2.5 py-1 rounded text-xs">Re-imprimir</button>
+                                    <button onclick="reimprimirBoleto(${b.id}, ${b.sorteo_id})" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 px-2.5 py-1 rounded text-xs">Re-imprimir</button>
                                 </td>
                             </tr>`;
                     });
@@ -521,11 +667,11 @@
             if(res.ok) { alert(data.mensaje); cargarDatosAdmin(); } else { alert(data.error); }
         }
 
-        async function reimprimirBoleto(boletoId) {
+        async function reimprimirBoleto(boletoId, sorteoId) {
             const res = await fetch(`/api/reimprimir/${boletoId}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ usuario: currentUser, password: currentPass })
+                body: JSON.stringify({ usuario: currentUser, password: currentPass, sorteo_id: sorteoId })
             });
             if(res.ok) { alert("¡Reimpresión enviada!"); cargarDatosAdmin(); }
         }

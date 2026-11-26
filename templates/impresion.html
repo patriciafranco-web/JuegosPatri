@@ -68,9 +68,7 @@
 
         async function imprimirBoletoIndividual(b) {
             const area = document.getElementById('areaImpresion');
-            const urlValidacion = `${window.location.origin}/validar/${b.id}`;
-            
-            // Usamos un tamaño de 150x150 pero forzamos un contenedor con margen blanco y alta definición (correction level H)
+            const urlValidacion = `${window.location.origin}/validar/${b.id}?sorteo_id=${b.sorteo_id || 1}`;
             const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&ecc=H&margin=2&data=${encodeURIComponent(urlValidacion)}`;
 
             area.innerHTML = `
@@ -96,7 +94,7 @@
             
             area.innerHTML = '';
             try {
-                await fetch(`/api/marcar-impreso/${b.id}`, { method: 'POST' });
+                await fetch(`/api/marcar-impreso/${b.id}?sorteo_id=${b.sorteo_id || 1}`, { method: 'POST' });
             } catch (e) {
                 console.error("Error marcando como impreso:", e);
             }

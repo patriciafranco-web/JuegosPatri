@@ -175,6 +175,58 @@ def get_db():
     return conn
 
 
+def obtener_siguiente_lote(cursor):
+    lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
+    max_lote = cursor.execute("SELECT COALESCE(MAX(lote_id), 0) FROM boletos").fetchone()[0]
+    current_lote = max(int(lote_row["valor"]) if lote_row else 1, max_lote + 1)
+    cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
+    return current_lote
+
+
+def asignar_numeros_libres(cursor, sorteo_id, cantidad):
+    nuevos_boletos_ids = []
+    for _ in range(cantidad):
+        num_boleto = None
+        while num_boleto is None:
+            liberado = cursor.execute(
+                "SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1",
+                (sorteo_id,)
+            ).fetchone()
+            if liberado:
+                cand = liberado["numero"]
+                cursor.execute(
+                    "DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?",
+                    (sorteo_id, cand)
+                )
+                ocupado = cursor.execute(
+                    "SELECT 1 FROM boletos WHERE id = ? AND sorteo_id = ?",
+                    (cand, sorteo_id)
+                ).fetchone()
+                if not ocupado and cand not in nuevos_boletos_ids:
+                    num_boleto = cand
+            else:
+                cont_row = cursor.execute(
+                    "SELECT valor FROM config WHERE clave = ?",
+                    (f"contador_{sorteo_id}",)
+                ).fetchone()
+                cand = int(cont_row["valor"]) if cont_row else 1
+                while (
+                    cursor.execute(
+                        "SELECT 1 FROM boletos WHERE id = ? AND sorteo_id = ?",
+                        (cand, sorteo_id)
+                    ).fetchone()
+                    or cand in nuevos_boletos_ids
+                ):
+                    cand += 1
+                cursor.execute(
+                    "INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)",
+                    (f"contador_{sorteo_id}", str(cand + 1))
+                )
+                num_boleto = cand
+        nuevos_boletos_ids.append(num_boleto)
+    return nuevos_boletos_ids
+
+
 def init_db():
     if not os.path.exists(DB_PATH) and os.path.exists(BACKUP_PATH):
         try:
@@ -716,71 +768,71 @@ def obtener_sorteos():
 
 @app.route("/api/comprar", methods=["POST"])
 def comprar():
-    data = request.json or {}
-    sorteo_id = int(data.get("sorteo_id", 1))
-    nombre = data.get("nombre")
-    telefono = data.get("telefono")
-    cedula = data.get("cedula")
-    cantidad = int(data.get("cantidad", 1))
-    metodo_pago = data.get("metodo_pago", "Transferencia BNF")
-    detalle_pago = data.get("detalle_pago", "BNF Patricia Franco")
-    es_juego_loco = 1 if data.get("es_juego_loco") in (1, True, "1", "true") else 0
-    vendedor = str(data.get("vendedor", "Directo")).strip() or "Directo"
+    try:
+        data = request.json or {}
+        sorteo_id = int(data.get("sorteo_id", 1))
+        nombre = str(data.get("nombre", "")).strip()
+        telefono = str(data.get("telefono", "")).strip()
+        cedula = str(data.get("cedula", "")).strip()
+        cantidad = int(data.get("cantidad", 1))
+        metodo_pago = data.get("metodo_pago", "Transferencia BNF")
+        detalle_pago = data.get("detalle_pago", "BNF Patricia Franco")
+        es_juego_loco = 1 if data.get("es_juego_loco") in (1, True, "1", "true") else 0
+        vendedor = str(data.get("vendedor", "Directo")).strip() or "Directo"
 
-    if not nombre or not telefono or not cedula or cantidad < 1:
-        return jsonify({"error": "Todos los campos son obligatorios."}), 400
+        if not nombre or not telefono or not cedula or cantidad < 1:
+            return jsonify({"error": "Todos los campos son obligatorios."}), 400
 
-    with bloqueo_compra:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO clientes (telefono, nombre, cedula) VALUES (?, ?, ?)", (telefono, nombre, cedula))
-        sorteo = cursor.execute("SELECT * FROM sorteos WHERE id = ? AND estado = 'Activo'", (sorteo_id,)).fetchone()
-        if not sorteo:
+        with bloqueo_compra:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO clientes (telefono, nombre, cedula) VALUES (?, ?, ?)",
+                (telefono, nombre, cedula)
+            )
+            sorteo = cursor.execute(
+                "SELECT * FROM sorteos WHERE id = ? AND estado = 'Activo'",
+                (sorteo_id,)
+            ).fetchone()
+            if not sorteo:
+                conn.close()
+                return jsonify({"error": "El sorteo seleccionado ya no está activo."}), 400
+
+            total_activos = cursor.execute(
+                "SELECT COUNT(*) FROM boletos WHERE sorteo_id = ?",
+                (sorteo_id,)
+            ).fetchone()[0]
+            if (total_activos + cantidad) > sorteo["limite_boletos"]:
+                conn.close()
+                return jsonify({"error": "No hay suficientes boletos disponibles."}), 400
+
+            current_lote = obtener_siguiente_lote(cursor)
+            nuevos_boletos_ids = asignar_numeros_libres(cursor, sorteo_id, cantidad)
+
+            for num_boleto in nuevos_boletos_ids:
+                cursor.execute("""
+                    INSERT INTO boletos (id, sorteo_id, lote_id, nombre, telefono, cedula, cantidad_lote, imagen_comprobante, metodo_pago, detalle_pago, estado, impreso, es_juego_loco, vendedor)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', 0, ?, ?)
+                """, (num_boleto, sorteo_id, current_lote, nombre, telefono, cedula, cantidad, "", metodo_pago, detalle_pago, es_juego_loco, vendedor))
+
+            conn.commit()
             conn.close()
-            return jsonify({"error": "El sorteo seleccionado ya no está activo."}), 400
+            respaldar_base_datos()
 
-        total_activos = cursor.execute("SELECT COUNT(*) FROM boletos WHERE sorteo_id = ?", (sorteo_id,)).fetchone()[0]
-        if (total_activos + cantidad) > sorteo["limite_boletos"]:
-            conn.close()
-            return jsonify({"error": "No hay suficientes boletos disponibles."}), 400
+        rango_str = (
+            f"#{str(nuevos_boletos_ids[0]).zfill(5)}"
+            if len(nuevos_boletos_ids) == 1
+            else f"#{str(nuevos_boletos_ids[0]).zfill(5)} al #{str(nuevos_boletos_ids[-1]).zfill(5)}"
+        )
 
-        lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
-        current_lote = int(lote_row["valor"]) if lote_row else 1
-        cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
-
-        nuevos_boletos_ids = []
-        for _ in range(cantidad):
-            liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
-            if liberado:
-                num_boleto = liberado["numero"]
-                cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
-            else:
-                cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
-                num_boleto = int(cont_row["valor"]) if cont_row else 1
-                cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
-            nuevos_boletos_ids.append(num_boleto)
-
-        for num_boleto in nuevos_boletos_ids:
-            cursor.execute("""
-                INSERT INTO boletos (id, sorteo_id, lote_id, nombre, telefono, cedula, cantidad_lote, imagen_comprobante, metodo_pago, detalle_pago, estado, impreso, es_juego_loco, vendedor)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', 0, ?, ?)
-            """, (num_boleto, sorteo_id, current_lote, nombre, telefono, cedula, cantidad, "", metodo_pago, detalle_pago, es_juego_loco, vendedor))
-
-        conn.commit()
-        conn.close()
-        respaldar_base_datos()
-
-    rango_str = (
-        f"#{str(nuevos_boletos_ids[0]).zfill(5)}"
-        if len(nuevos_boletos_ids) == 1
-        else f"#{str(nuevos_boletos_ids[0]).zfill(5)} al #{str(nuevos_boletos_ids[-1]).zfill(5)}"
-    )
-
-    return jsonify({
-        "mensaje": "¡Reserva registrada con éxito en Juegos Patri!",
-        "rango": rango_str,
-        "lote_id": current_lote
-    }), 200
+        return jsonify({
+            "mensaje": "¡Reserva registrada con éxito en Juegos Patri!",
+            "rango": rango_str,
+            "lote_id": current_lote
+        }), 200
+    except Exception as e:
+        print(f"❌ ERROR REAL EN /api/comprar: {e}")
+        return jsonify({"error": f"Error interno al reservar: {str(e)}"}), 500
 
 
 @app.route("/api/subir-comprobante", methods=["POST"])
@@ -925,21 +977,8 @@ def webhook_whatsapp():
                 sorteo_id = sorteo["id"] if sorteo else 1
                 cantidad = sesion["datos"]["cantidad"]
 
-                lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
-                current_lote = int(lote_row["valor"]) if lote_row else 1
-                cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
-
-                nuevos_boletos_ids = []
-                for _ in range(cantidad):
-                    liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
-                    if liberado:
-                        num_boleto = liberado["numero"]
-                        cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
-                    else:
-                        cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
-                        num_boleto = int(cont_row["valor"]) if cont_row else 1
-                        cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
-                    nuevos_boletos_ids.append(num_boleto)
+                current_lote = obtener_siguiente_lote(cursor)
+                nuevos_boletos_ids = asignar_numeros_libres(cursor, sorteo_id, cantidad)
 
                 numeros_str = []
                 for num_boleto in nuevos_boletos_ids:
@@ -1027,21 +1066,8 @@ def webhook_whatsapp():
                             precio_unitario = sorteo["precio"] if sorteo else 2000
                             total_a_pagar = cantidad * precio_unitario
 
-                            lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
-                            current_lote = int(lote_row["valor"]) if lote_row else 1
-                            cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
-
-                            nuevos_boletos_ids = []
-                            for _ in range(cantidad):
-                                liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
-                                if liberado:
-                                    num_boleto = liberado["numero"]
-                                    cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
-                                else:
-                                    cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
-                                    num_boleto = int(cont_row["valor"]) if cont_row else 1
-                                    cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
-                                nuevos_boletos_ids.append(num_boleto)
+                            current_lote = obtener_siguiente_lote(cursor)
+                            nuevos_boletos_ids = asignar_numeros_libres(cursor, sorteo_id, cantidad)
 
                             numeros_str = []
                             for num_boleto in nuevos_boletos_ids:
@@ -1325,9 +1351,7 @@ def admin_cargar_manual_silencioso():
         conn = get_db()
         cursor = conn.cursor()
 
-        lote_row = cursor.execute("SELECT valor FROM config WHERE clave = 'lote_contador'").fetchone()
-        current_lote = int(lote_row["valor"]) if lote_row else 1
-        cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES ('lote_contador', ?)", (str(current_lote + 1),))
+        current_lote = obtener_siguiente_lote(cursor)
 
         nuevos_boletos_ids = []
         if inicio_personalizado is not None and str(inicio_personalizado).strip() != "":
@@ -1336,16 +1360,7 @@ def admin_cargar_manual_silencioso():
                 nuevos_boletos_ids.append(num_actual)
                 num_actual += 1
         else:
-            for _ in range(cantidad):
-                liberado = cursor.execute("SELECT numero FROM numeros_liberados WHERE sorteo_id = ? ORDER BY numero ASC LIMIT 1", (sorteo_id,)).fetchone()
-                if liberado:
-                    num_boleto = liberado["numero"]
-                    cursor.execute("DELETE FROM numeros_liberados WHERE sorteo_id = ? AND numero = ?", (sorteo_id, num_boleto))
-                else:
-                    cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()
-                    num_boleto = int(cont_row["valor"]) if cont_row else 1
-                    cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (f"contador_{sorteo_id}", str(num_boleto + 1)))
-                nuevos_boletos_ids.append(num_boleto)
+            nuevos_boletos_ids = asignar_numeros_libres(cursor, sorteo_id, cantidad)
 
         max_num = max(nuevos_boletos_ids)
         cont_row = cursor.execute("SELECT valor FROM config WHERE clave = ?", (f"contador_{sorteo_id}",)).fetchone()

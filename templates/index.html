@@ -1,4 +1,4 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -162,35 +162,44 @@
 
         document.getElementById('formCompra').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const btnReservar = document.getElementById('btnReservar');
             const resDiv = document.getElementById('resultadoCompra');
+            btnReservar.disabled = true;
             resDiv.className = "mt-4 text-center text-sm font-semibold text-amber-400";
             resDiv.innerText = "Reservando números...";
 
-            const res = await fetch('/api/comprar', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    sorteo_id: document.getElementById('selectSorteo').value,
-                    nombre: document.getElementById('nombre').value,
-                    cedula: document.getElementById('cedula').value,
-                    telefono: document.getElementById('telefono').value,
-                    cantidad: parseInt(document.getElementById('cantidad').value),
-                    vendedor: document.getElementById('vendedor').value,
-                    metodo_pago: "Transferencia BNF",
-                    detalle_pago: "BNF Patricia Franco"
-                })
-            });
-            const data = await res.json();
-            
-            if(res.ok) {
-                loteGeneradoId = data.lote_id;
-                document.getElementById('textoRangoAsignado').innerText = `Tus números asignados son: ${data.rango}`;
-                document.getElementById('formCompra').classList.add('hidden');
-                document.getElementById('seccionSubirComprobante').classList.remove('hidden');
-                resDiv.innerText = "";
-            } else {
+            try {
+                const res = await fetch('/api/comprar', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        sorteo_id: document.getElementById('selectSorteo').value,
+                        nombre: document.getElementById('nombre').value,
+                        cedula: document.getElementById('cedula').value,
+                        telefono: document.getElementById('telefono').value,
+                        cantidad: parseInt(document.getElementById('cantidad').value),
+                        vendedor: document.getElementById('vendedor').value,
+                        metodo_pago: "Transferencia BNF",
+                        detalle_pago: "BNF Patricia Franco"
+                    })
+                });
+                const data = await res.json();
+                
+                if(res.ok) {
+                    loteGeneradoId = data.lote_id;
+                    document.getElementById('textoRangoAsignado').innerText = `Tus números asignados son: ${data.rango}`;
+                    document.getElementById('formCompra').classList.add('hidden');
+                    document.getElementById('seccionSubirComprobante').classList.remove('hidden');
+                    resDiv.innerText = "";
+                } else {
+                    resDiv.className = "mt-4 text-center text-sm font-semibold text-rose-400";
+                    resDiv.innerText = data.error || "No se pudo completar la reserva.";
+                    btnReservar.disabled = false;
+                }
+            } catch (err) {
                 resDiv.className = "mt-4 text-center text-sm font-semibold text-rose-400";
-                resDiv.innerText = data.error;
+                resDiv.innerText = "Error de conexión al reservar. Intenta nuevamente.";
+                btnReservar.disabled = false;
             }
         });
 
@@ -209,20 +218,25 @@
             resDiv.className = "mt-4 text-center text-sm font-semibold text-amber-400";
             resDiv.innerText = "Subiendo comprobante...";
 
-            const res = await fetch('/api/subir-comprobante', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ lote_id: loteGeneradoId, imagen_comprobante: imagenBase64 })
-            });
-            const data = await res.json();
+            try {
+                const res = await fetch('/api/subir-comprobante', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ lote_id: loteGeneradoId, imagen_comprobante: imagenBase64 })
+                });
+                const data = await res.json();
 
-            if (res.ok) {
-                resDiv.className = "mt-4 text-center text-sm font-semibold text-emerald-400";
-                resDiv.innerText = "¡Comprobante enviado con éxito! El administrador validará tu pago en BNF pronto.";
-                document.getElementById('seccionSubirComprobante').classList.add('hidden');
-            } else {
+                if (res.ok) {
+                    resDiv.className = "mt-4 text-center text-sm font-semibold text-emerald-400";
+                    resDiv.innerText = "¡Comprobante enviado con éxito! El administrador validará tu pago en BNF pronto.";
+                    document.getElementById('seccionSubirComprobante').classList.add('hidden');
+                } else {
+                    resDiv.className = "mt-4 text-center text-sm font-semibold text-rose-400";
+                    resDiv.innerText = data.error || "No se pudo subir el comprobante.";
+                }
+            } catch (err) {
                 resDiv.className = "mt-4 text-center text-sm font-semibold text-rose-400";
-                resDiv.innerText = data.error;
+                resDiv.innerText = "Error de conexión al subir el comprobante.";
             }
         }
 

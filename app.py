@@ -216,6 +216,12 @@ def init_db():
         )
     """)
 
+    columnas_boletos = [col["name"] for col in cursor.execute("PRAGMA table_info(boletos)").fetchall()]
+    if "es_juego_loco" not in columnas_boletos:
+        cursor.execute("ALTER TABLE boletos ADD COLUMN es_juego_loco INTEGER DEFAULT 0")
+    if "vendedor" not in columnas_boletos:
+        cursor.execute("ALTER TABLE boletos ADD COLUMN vendedor TEXT DEFAULT 'Directo'")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
             telefono TEXT PRIMARY KEY,
